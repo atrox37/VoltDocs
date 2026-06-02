@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+.env
+.env.*
+!.env.example
+
+data/
+logs/
+*.log
+
+.DS_Store
+

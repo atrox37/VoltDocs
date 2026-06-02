@@ -1,0 +1,15 @@
+{
+  "name": "voltdocs",
+  "private": true,
+  "version": "0.1.1",
+  "scripts": {
+    "dev": "concurrently \"pnpm --dir backend dev\" \"pnpm --dir frontend dev\"",
+    "build": "pnpm --dir backend build && pnpm --dir frontend build",
+    "start": "pnpm --dir backend start"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "packageManager": "pnpm@10.15.1"
+}
+

@@ -1,0 +1,29 @@
+services:
+  api:
+    build:
+      context: ./backend
+    environment:
+      PORT: "8080"
+      DATA_DIR: /app/data
+      DATABASE_PATH: /app/data/db/voltdocs.db
+      REQUIRE_AUTH: "false"
+      PANDOC_MAX_CONCURRENCY: "1"
+      PANDOC_TIMEOUT_SECONDS: "300"
+      MAX_UPLOAD_MB: "50"
+      GLOSSARY_MAX_TERMS_PER_REQUEST: "100"
+      GLOSSARY_MAX_PROMPT_CHARS: "12000"
+      TRANSLATION_LAMBDA_URL: "${TRANSLATION_LAMBDA_URL:-}"
+    volumes:
+      - /opt/voltdocs/data:/app/data
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "8088:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
