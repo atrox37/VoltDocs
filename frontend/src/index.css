@@ -1,0 +1,410 @@
+/* Global Reset */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: #eef3f9;
+}
+
+/* Scrollbar styling — matches theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+}
+
+/* Remove default heading margins for antd Title */
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+}
+
+p {
+  margin: 0;
+}
+
+/* antd overrides for tighter layout */
+.ant-card-head {
+  min-height: auto;
+  padding: 12px 16px;
+}
+
+.ant-card-body {
+  padding: 16px;
+}
+
+.ant-card-small > .ant-card-head {
+  padding: 8px 12px;
+  min-height: auto;
+}
+
+.ant-card-small > .ant-card-body {
+  padding: 12px;
+}
+
+.ant-statistic-title {
+  margin-bottom: 2px;
+  font-size: 12px;
+}
+
+.ant-statistic-content {
+  font-size: 20px;
+}
+
+/* Compact table rows */
+.ant-table-small .ant-table-cell {
+  padding: 8px 12px !important;
+}
+
+/* Upload area — ensure click works */
+.ant-upload-wrapper .ant-upload-drag {
+  cursor: pointer;
+}
+
+.voltdocs-login-shell {
+  position: relative;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1.22fr 0.78fr;
+  background:
+    linear-gradient(135deg, #edf3fb 0%, #f7fafe 45%, #eff4fb 100%);
+  overflow: hidden;
+}
+
+.voltdocs-login-mesh {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at 15% 20%, rgba(60, 116, 184, 0.16) 0, transparent 28%),
+    radial-gradient(circle at 85% 78%, rgba(27, 58, 107, 0.14) 0, transparent 24%),
+    radial-gradient(rgba(32, 42, 68, 0.07) 1px, transparent 1px);
+  background-size: auto, auto, 22px 22px;
+  background-position: center, center, center;
+  pointer-events: none;
+}
+
+.voltdocs-login-hero {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 40px 44px 34px;
+  color: #f8f4ea;
+  background:
+    linear-gradient(155deg, rgba(25, 56, 98, 0.97) 0%, rgba(24, 47, 81, 0.95) 58%, rgba(19, 38, 64, 0.94) 100%);
+}
+
+.voltdocs-login-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(rgba(255, 255, 255, 0.13) 1px, transparent 1px);
+  background-size: 24px 24px;
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.voltdocs-login-hero-glow {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(62px);
+  pointer-events: none;
+}
+
+.voltdocs-login-hero-glow-left {
+  top: -100px;
+  left: -80px;
+  width: 320px;
+  height: 320px;
+  background: rgba(82, 150, 226, 0.22);
+}
+
+.voltdocs-login-hero-glow-right {
+  right: -120px;
+  bottom: -120px;
+  width: 360px;
+  height: 360px;
+  background: rgba(191, 223, 255, 0.14);
+}
+
+.voltdocs-login-brand,
+.voltdocs-login-mobile-brand {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.voltdocs-login-mobile-brand {
+  display: none;
+}
+
+.voltdocs-login-brandmark {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 10px 30px rgba(12, 20, 38, 0.28);
+}
+
+.voltdocs-login-brandmark-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.voltdocs-login-brand-title.ant-typography {
+  margin: 0 !important;
+  color: inherit;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.voltdocs-login-brand-subtitle.ant-typography {
+  color: rgba(248, 244, 234, 0.68);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 11px;
+}
+
+.voltdocs-login-hero-copy,
+.voltdocs-login-features,
+.voltdocs-login-version {
+  position: relative;
+}
+
+.voltdocs-login-hero-copy {
+  max-width: 520px;
+}
+
+.voltdocs-login-hero-title.ant-typography {
+  margin: 0 0 18px !important;
+  color: #fff8eb;
+  font-size: 54px;
+  line-height: 1.03;
+  letter-spacing: -0.04em;
+  font-weight: 700;
+}
+
+.voltdocs-login-hero-desc.ant-typography {
+  color: rgba(248, 244, 234, 0.8);
+  font-size: 15px;
+  line-height: 1.8;
+  margin: 0;
+}
+
+.voltdocs-login-features {
+  display: grid;
+  gap: 14px;
+  max-width: 430px;
+}
+
+.voltdocs-login-feature {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.voltdocs-login-feature-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(12px);
+  color: #a8d0ff;
+  font-size: 16px;
+}
+
+.voltdocs-login-feature-text.ant-typography {
+  color: rgba(248, 244, 234, 0.88);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.voltdocs-login-version.ant-typography {
+  color: rgba(248, 244, 234, 0.45);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.voltdocs-login-panel-wrap {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+}
+
+.voltdocs-login-panel {
+  width: 100%;
+  max-width: 430px;
+  border-radius: 28px !important;
+  background: rgba(250, 252, 255, 0.82) !important;
+  border: 1px solid rgba(73, 108, 152, 0.14) !important;
+  box-shadow:
+    0 24px 60px rgba(33, 50, 78, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(18px);
+}
+
+.voltdocs-login-panel .ant-card-body {
+  padding: 34px 32px;
+}
+
+.voltdocs-login-panel-title.ant-typography {
+  margin: 0 0 4px !important;
+  font-size: 30px;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  color: #21324e;
+}
+
+.voltdocs-login-panel-subtitle.ant-typography {
+  color: rgba(33, 50, 78, 0.65);
+  font-size: 14px;
+}
+
+.voltdocs-login-action.ant-btn {
+  height: 50px;
+  border: none;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #1f365f 0%, #243d69 62%, #375582 100%);
+  box-shadow: 0 14px 28px rgba(29, 54, 95, 0.22);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.voltdocs-login-action.ant-btn:hover,
+.voltdocs-login-action.ant-btn:focus {
+  background: linear-gradient(135deg, #243d69 0%, #2a4677 62%, #3e5f91 100%) !important;
+}
+
+.voltdocs-login-action.ant-btn > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.voltdocs-login-ms-logo {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.voltdocs-login-action-desc.ant-typography {
+  font-size: 11.5px;
+  text-align: center;
+  color: rgba(33, 50, 78, 0.58);
+}
+
+.voltdocs-login-meta {
+  padding-top: 18px;
+  border-top: 1px solid rgba(73, 108, 152, 0.12);
+  display: grid;
+  gap: 12px;
+}
+
+.voltdocs-login-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(33, 50, 78, 0.72);
+  font-size: 12px;
+}
+
+.voltdocs-login-meta-item .anticon {
+  color: #3b6ea8;
+}
+
+.voltdocs-login-meta-item .ant-typography,
+.voltdocs-login-terms.ant-typography {
+  color: inherit;
+  font-size: inherit;
+}
+
+.voltdocs-login-terms.ant-typography {
+  color: rgba(33, 50, 78, 0.58);
+  font-size: 11px;
+  line-height: 1.75;
+}
+
+.voltdocs-login-loading {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #edf3fb 0%, #f8fbff 100%);
+}
+
+@media (max-width: 980px) {
+  .voltdocs-login-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .voltdocs-login-hero {
+    display: none;
+  }
+
+  .voltdocs-login-mobile-brand {
+    display: flex;
+  }
+
+  .voltdocs-login-panel-wrap {
+    padding: 24px;
+  }
+}
+
+@media (max-width: 560px) {
+  .voltdocs-login-panel-wrap {
+    padding: 16px;
+  }
+
+  .voltdocs-login-panel .ant-card-body {
+    padding: 26px 20px;
+  }
+
+  .voltdocs-login-panel-title.ant-typography {
+    font-size: 26px;
+  }
+}
