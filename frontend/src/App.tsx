@@ -3,6 +3,7 @@ import { ConfigProvider, App as AntApp } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import { AuthProvider } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
+import RoleRoute from "./components/RoleRoute";
 import AppLayout from "./layouts/AppLayout";
 import Convert from "./pages/Convert";
 import Translate from "./pages/Translate";
@@ -38,8 +39,12 @@ const App = () => (
                 <Route path="/templates" element={<Templates />} />
                 <Route path="/memory" element={<Memory />} />
                 <Route path="/settings" element={<Settings />} />
-                <Route path="/admin" element={<Admin />} />
-                <Route path="/audit-logs" element={<AuditLogs />} />
+                <Route element={<RoleRoute minRole="super_admin" />}>
+                  <Route path="/admin" element={<Admin />} />
+                </Route>
+                <Route element={<RoleRoute minRole="manager" />}>
+                  <Route path="/audit-logs" element={<AuditLogs />} />
+                </Route>
               </Route>
             </Route>
           </Routes>

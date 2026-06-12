@@ -14,20 +14,25 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
+import type { UserRole } from "../api/auth";
+import { hasMinRole, isSuperAdmin, ROLE_LABEL } from "../auth/permissions";
 import { useAuth } from "../contexts/AuthContext";
+import BrandIcon from "../components/BrandIcon";
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
 
-function buildMenuItems(isAdmin: boolean): MenuProps["items"] {
+function buildMenuItems(role: UserRole | undefined): MenuProps["items"] {
   const systemChildren: MenuProps["items"] = [];
 
-  if (isAdmin) {
+  if (isSuperAdmin(role)) {
     systemChildren.push({ key: "/admin", icon: <TeamOutlined />, label: "用户管理" });
+  }
+  if (hasMinRole(role, "manager")) {
     systemChildren.push({ key: "/audit-logs", icon: <ContainerOutlined />, label: "操作日志" });
   }
 
-  return [
+  const items: MenuProps["items"] = [
     {
       type: "group",
       label: "工作流",
@@ -44,12 +49,17 @@ function buildMenuItems(isAdmin: boolean): MenuProps["items"] {
         { key: "/memory", icon: <DatabaseOutlined />, label: "术语库" },
       ],
     },
-    {
+  ];
+
+  if (systemChildren.length > 0) {
+    items.push({
       type: "group",
       label: "系统",
       children: systemChildren,
-    },
-  ];
+    });
+  }
+
+  return items;
 }
 
 export default function AppLayout() {
@@ -57,8 +67,7 @@ export default function AppLayout() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { user, logout } = useAuth();
-  const isAdmin = user?.role === "super_admin";
-  const menuItems = buildMenuItems(isAdmin);
+  const menuItems = buildMenuItems(user?.role);
 
   const userMenu: MenuProps["items"] = [
     {
@@ -67,6 +76,11 @@ export default function AppLayout() {
         <div style={{ padding: "4px 0" }}>
           <div style={{ fontWeight: 600 }}>{user?.name}</div>
           <div style={{ fontSize: 12, color: "#888" }}>{user?.email}</div>
+          {user?.role && (
+            <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>
+              {ROLE_LABEL[user.role]}
+            </div>
+          )}
         </div>
       ),
       disabled: true,
@@ -135,7 +149,7 @@ export default function AppLayout() {
             gap: 10,
           }}
         >
-          <img src="/icon.png" alt="VoltDocs" style={{ width: 32, height: 32, borderRadius: 6 }} />
+          <BrandIcon size={32} />
           {!collapsed && (
             <div style={{ lineHeight: 1.2 }}>
               <div style={{ fontSize: 15, fontWeight: 600, color: "#1b3a6b" }}>VoltDocs</div>

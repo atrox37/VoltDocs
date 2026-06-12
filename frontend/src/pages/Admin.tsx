@@ -14,27 +14,10 @@ import { ReloadOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { listUsers, updateUserRole, type UserEntry } from "../api/users";
 import type { UserRole } from "../api/auth";
+import { ROLE_COLOR, ROLE_LABEL, ROLE_OPTIONS } from "../auth/permissions";
 import { useAuth } from "../contexts/AuthContext";
 
 const { Text } = Typography;
-
-const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
-  { value: "super_admin", label: "超级管理员" },
-  { value: "manager", label: "普通管理员" },
-  { value: "user", label: "普通用户" },
-];
-
-const ROLE_COLOR: Record<UserRole, string> = {
-  super_admin: "red",
-  manager: "orange",
-  user: "blue",
-};
-
-const ROLE_LABEL: Record<UserRole, string> = {
-  super_admin: "超级管理员",
-  manager: "普通管理员",
-  user: "普通用户",
-};
 
 export default function Admin() {
   const { notification: notif } = App.useApp();

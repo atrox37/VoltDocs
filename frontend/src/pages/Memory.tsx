@@ -39,12 +39,15 @@ import {
   type GlossaryImportPreviewRow,
   type GlossaryTerm,
 } from "@/api/glossary";
+import { useAuth } from "@/contexts/AuthContext";
 
 
 const { Text, Paragraph } = Typography;
 
 export default function Memory() {
   const { message } = App.useApp();
+  const { hasMinRole } = useAuth();
+  const canManage = hasMinRole("manager");
   const [terms, setTerms] = useState<GlossaryTerm[]>([]);
   const [loading, setLoading] = useState(true);
   const [hitCounts, setHitCounts] = useState<Record<string, number>>({});
@@ -180,14 +183,14 @@ export default function Memory() {
       title: "中文术语",
       dataIndex: "sourceTerm",
       key: "sourceTerm",
-      width: "32%",
+      width: canManage ? "32%" : "40%",
       render: (text: string) => <Text strong>{text}</Text>,
     },
     {
       title: "英文术语",
       dataIndex: "targetTerm",
       key: "targetTerm",
-      width: "32%",
+      width: canManage ? "32%" : "40%",
     },
     {
       title: "命中次数",
@@ -206,46 +209,50 @@ export default function Memory() {
         );
       },
     },
-    {
-      title: "是否可用",
-      dataIndex: "enabled",
-      key: "enabled",
-      width: 90,
-      align: "center" as const,
-      render: (enabled: boolean, record: GlossaryTerm) => (
-        <Switch
-          size="small"
-          checked={enabled}
-          loading={togglingId === record.id}
-          onChange={(checked) => void handleToggleEnabled(record.id, checked)}
-        />
-      ),
-    },
-    {
-      title: "操作",
-      key: "action",
-      width: 90,
-      render: (_value, record) => (
-        <Space size="small">
-          <Button
-            type="link"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => {
-              setEditingTerm(record);
-              editForm.setFieldsValue({
-                sourceTerm: record.sourceTerm,
-                targetTerm: record.targetTerm,
-                enabled: record.enabled,
-              });
-            }}
-          />
-          <Popconfirm title="确认删除这个术语？" onConfirm={() => void handleDelete(record.id)}>
-            <Button type="link" size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
-        </Space>
-      ),
-    },
+    ...(canManage
+      ? [
+          {
+            title: "是否可用",
+            dataIndex: "enabled",
+            key: "enabled",
+            width: 90,
+            align: "center" as const,
+            render: (enabled: boolean, record: GlossaryTerm) => (
+              <Switch
+                size="small"
+                checked={enabled}
+                loading={togglingId === record.id}
+                onChange={(checked) => void handleToggleEnabled(record.id, checked)}
+              />
+            ),
+          },
+          {
+            title: "操作",
+            key: "action",
+            width: 90,
+            render: (_value: unknown, record: GlossaryTerm) => (
+              <Space size="small">
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<EditOutlined />}
+                  onClick={() => {
+                    setEditingTerm(record);
+                    editForm.setFieldsValue({
+                      sourceTerm: record.sourceTerm,
+                      targetTerm: record.targetTerm,
+                      enabled: record.enabled,
+                    });
+                  }}
+                />
+                <Popconfirm title="确认删除这个术语？" onConfirm={() => void handleDelete(record.id)}>
+                  <Button type="link" size="small" danger icon={<DeleteOutlined />} />
+                </Popconfirm>
+              </Space>
+            ),
+          },
+        ]
+      : []),
   ];
 
   const previewColumns: ColumnsType<GlossaryImportPreviewRow> = [
@@ -315,34 +322,40 @@ export default function Memory() {
               style={{ width: 240 }}
               allowClear
             />
-            <Upload
-              accept=".xlsx,.csv"
-              showUploadList={false}
-              beforeUpload={(file) => {
-                void handleImportPreview(file);
-                return false;
-              }}
-            >
-              <Button icon={<UploadOutlined />} loading={previewing}>
-                批量导入
-              </Button>
-            </Upload>
+            {canManage && (
+              <Upload
+                accept=".xlsx,.csv"
+                showUploadList={false}
+                beforeUpload={(file) => {
+                  void handleImportPreview(file);
+                  return false;
+                }}
+              >
+                <Button icon={<UploadOutlined />} loading={previewing}>
+                  批量导入
+                </Button>
+              </Upload>
+            )}
             <Button
               icon={<DownloadOutlined />}
               onClick={() => window.open("/api/glossary/export-csv", "_blank")}
             >
               导出
             </Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setShowAdd(true)}>
-              新增术语
-            </Button>
+            {canManage && (
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setShowAdd(true)}>
+                新增术语
+              </Button>
+            )}
           </Space>
         }
       >
         <div style={{ padding: "12px 16px 0" }}>
           <Paragraph type="secondary" style={{ marginBottom: 12 }}>
             这是一套可双向使用的中英术语对。翻译时会根据当前方向自动使用同一套术语，无需分别维护两份。
-            可通过“是否可用”控制某个术语是否参与翻译。批量导入支持 <Text code>.xlsx</Text> 和 <Text code>.csv</Text>。
+            {canManage
+              ? <>可通过“是否可用”控制某个术语是否参与翻译。批量导入支持 <Text code>.xlsx</Text> 和 <Text code>.csv</Text>。</>
+              : "您当前为只读权限，可浏览、搜索和导出术语。"}
           </Paragraph>
         </div>
         <Table
@@ -363,66 +376,70 @@ export default function Memory() {
         />
       </Card>
 
-      <Modal title="新增术语" open={showAdd} onOk={() => void handleAdd()} onCancel={() => setShowAdd(false)} okText="添加" width={480}>
-        <Form form={form} layout="vertical" style={{ marginTop: 16 }} initialValues={{ enabled: true }}>
-          <Form.Item name="sourceTerm" label="中文术语" rules={[{ required: true, message: "请输入中文术语" }]}>
-            <Input placeholder="例如：太阳能支架" />
-          </Form.Item>
-          <Form.Item name="targetTerm" label="英文术语" rules={[{ required: true, message: "请输入英文术语" }]}>
-            <Input placeholder="例如：solar mounting bracket" />
-          </Form.Item>
-          <Form.Item name="enabled" label="是否可用" valuePropName="checked">
-            <Switch checkedChildren="可用" unCheckedChildren="停用" />
-          </Form.Item>
-        </Form>
-      </Modal>
+      {canManage && (
+        <>
+          <Modal title="新增术语" open={showAdd} onOk={() => void handleAdd()} onCancel={() => setShowAdd(false)} okText="添加" width={480}>
+            <Form form={form} layout="vertical" style={{ marginTop: 16 }} initialValues={{ enabled: true }}>
+              <Form.Item name="sourceTerm" label="中文术语" rules={[{ required: true, message: "请输入中文术语" }]}>
+                <Input placeholder="例如：太阳能支架" />
+              </Form.Item>
+              <Form.Item name="targetTerm" label="英文术语" rules={[{ required: true, message: "请输入英文术语" }]}>
+                <Input placeholder="例如：solar mounting bracket" />
+              </Form.Item>
+              <Form.Item name="enabled" label="是否可用" valuePropName="checked">
+                <Switch checkedChildren="可用" unCheckedChildren="停用" />
+              </Form.Item>
+            </Form>
+          </Modal>
 
-      <Modal title="编辑术语" open={!!editingTerm} onOk={() => void handleEdit()} onCancel={() => setEditingTerm(null)} okText="保存" width={480}>
-        <Form form={editForm} layout="vertical" style={{ marginTop: 16 }}>
-          <Form.Item name="sourceTerm" label="中文术语">
-            <Input disabled />
-          </Form.Item>
-          <Form.Item name="targetTerm" label="英文术语" rules={[{ required: true, message: "请输入英文术语" }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="enabled" label="是否可用" valuePropName="checked">
-            <Switch checkedChildren="可用" unCheckedChildren="停用" />
-          </Form.Item>
-        </Form>
-      </Modal>
+          <Modal title="编辑术语" open={!!editingTerm} onOk={() => void handleEdit()} onCancel={() => setEditingTerm(null)} okText="保存" width={480}>
+            <Form form={editForm} layout="vertical" style={{ marginTop: 16 }}>
+              <Form.Item name="sourceTerm" label="中文术语">
+                <Input disabled />
+              </Form.Item>
+              <Form.Item name="targetTerm" label="英文术语" rules={[{ required: true, message: "请输入英文术语" }]}>
+                <Input />
+              </Form.Item>
+              <Form.Item name="enabled" label="是否可用" valuePropName="checked">
+                <Switch checkedChildren="可用" unCheckedChildren="停用" />
+              </Form.Item>
+            </Form>
+          </Modal>
 
-      <Modal
-        title="批量导入术语表"
-        open={importOpen}
-        width={920}
-        okText="确认导入"
-        cancelText="取消"
-        onOk={() => void handleImportCommit()}
-        onCancel={() => {
-          setImportOpen(false);
-          resetImportState();
-        }}
-        confirmLoading={importing}
-      >
-        <Space direction="vertical" style={{ width: "100%" }} size="middle">
-          <Text>
-            文件：<Text strong>{importFileName || "-"}</Text>
-          </Text>
-          <Space size="large">
-            <Tag color="green">新增 {importSummary.create}</Tag>
-            <Tag color="orange">替换 {importSummary.replace}</Tag>
-            <Tag>跳过 {importSummary.skip}</Tag>
-          </Space>
-          <Text type="secondary">系统会按“中文术语”匹配已有记录。标记为“替换”的内容会覆盖当前英文术语，请确认后再导入。</Text>
-          <Table
-            columns={previewColumns}
-            dataSource={importPreviewRows}
-            rowKey={(record) => `${record.sourceLang}-${record.targetLang}-${record.sourceTerm}`}
-            size="small"
-            pagination={{ pageSize: 10 }}
-          />
-        </Space>
-      </Modal>
+          <Modal
+            title="批量导入术语表"
+            open={importOpen}
+            width={920}
+            okText="确认导入"
+            cancelText="取消"
+            onOk={() => void handleImportCommit()}
+            onCancel={() => {
+              setImportOpen(false);
+              resetImportState();
+            }}
+            confirmLoading={importing}
+          >
+            <Space direction="vertical" style={{ width: "100%" }} size="middle">
+              <Text>
+                文件：<Text strong>{importFileName || "-"}</Text>
+              </Text>
+              <Space size="large">
+                <Tag color="green">新增 {importSummary.create}</Tag>
+                <Tag color="orange">替换 {importSummary.replace}</Tag>
+                <Tag>跳过 {importSummary.skip}</Tag>
+              </Space>
+              <Text type="secondary">系统会按“中文术语”匹配已有记录。标记为“替换”的内容会覆盖当前英文术语，请确认后再导入。</Text>
+              <Table
+                columns={previewColumns}
+                dataSource={importPreviewRows}
+                rowKey={(record) => `${record.sourceLang}-${record.targetLang}-${record.sourceTerm}`}
+                size="small"
+                pagination={{ pageSize: 10 }}
+              />
+            </Space>
+          </Modal>
+        </>
+      )}
     </div>
   );
 }

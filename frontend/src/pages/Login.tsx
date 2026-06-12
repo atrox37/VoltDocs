@@ -4,6 +4,7 @@ import { Alert, Button, Card, Flex, Space, Spin, Typography } from "antd";
 import { CloudSyncOutlined, DatabaseOutlined, LockOutlined } from "@ant-design/icons";
 import { useAuth } from "../contexts/AuthContext";
 import { getLoginUrl } from "../api/auth";
+import BrandIcon from "../components/BrandIcon";
 
 const { Title, Text, Paragraph, Link } = Typography;
 
@@ -21,7 +22,7 @@ function MicrosoftLogo() {
 function BrandMark() {
   return (
     <div className="voltdocs-login-brandmark">
-      <img src="/icon.png" alt="VoltDocs" className="voltdocs-login-brandmark-image" />
+      <BrandIcon size={40} className="voltdocs-login-brandmark-image" style={{ borderRadius: 8 }} />
     </div>
   );
 }

@@ -31,6 +31,7 @@ import {
   uploadTemplate,
   type Template,
 } from "@/api/templates";
+import { useAuth } from "@/contexts/AuthContext";
 
 const { Text, Paragraph } = Typography;
 const { Dragger } = Upload;
@@ -219,6 +220,8 @@ function EditTemplateModal({
 
 export default function Templates() {
   const { message } = App.useApp();
+  const { hasMinRole } = useAuth();
+  const canManage = hasMinRole("manager");
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState("");
@@ -300,17 +303,26 @@ export default function Templates() {
     {
       title: "操作",
       key: "action",
-      width: 240,
+      width: canManage ? 240 : 100,
       render: (_: unknown, record: Template) => (
         <Space>
-          <Button
-            type="link"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => setEditingTemplate(record)}
-          >
-            编辑
-          </Button>
+          {canManage && (
+            <>
+              <Button
+                type="link"
+                size="small"
+                icon={<EditOutlined />}
+                onClick={() => setEditingTemplate(record)}
+              >
+                编辑
+              </Button>
+              <Popconfirm title="确认删除这个模板？" onConfirm={() => void handleDelete(record.id)}>
+                <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+                  删除
+                </Button>
+              </Popconfirm>
+            </>
+          )}
           <Button
             type="link"
             size="small"
@@ -319,11 +331,6 @@ export default function Templates() {
           >
             下载
           </Button>
-          <Popconfirm title="确认删除这个模板？" onConfirm={() => void handleDelete(record.id)}>
-            <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-              删除
-            </Button>
-          </Popconfirm>
         </Space>
       ),
     },
@@ -345,14 +352,19 @@ export default function Templates() {
               style={{ width: 220 }}
               allowClear
             />
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setShowAdd(true)}>
-              新增模板
-            </Button>
+            {canManage && (
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setShowAdd(true)}>
+                新增模板
+              </Button>
+            )}
           </Space>
         }
       >
         <Paragraph type="secondary" style={{ marginBottom: 12, flexShrink: 0 }}>
-          模板用于控制 <Text code>.md → Word</Text> 输出时的样式、标题层级和页面结构。建议上传已整理好的标准 Word 模板。
+          模板用于控制 <Text code>.md → Word</Text> 输出时的样式、标题层级和页面结构。
+          {canManage
+            ? "建议上传已整理好的标准 Word 模板。"
+            : "您当前为只读权限，可浏览和下载模板。"}
         </Paragraph>
         {/* flex:1 + overflow:hidden makes the table container fill remaining space */}
         <div style={{ flex: 1, overflow: "hidden" }}>
@@ -371,17 +383,21 @@ export default function Templates() {
         </div>
       </Card>
 
-      <AddTemplateModal
-        open={showAdd}
-        onClose={() => setShowAdd(false)}
-        onAdded={() => void fetchAll()}
-      />
+      {canManage && (
+        <>
+          <AddTemplateModal
+            open={showAdd}
+            onClose={() => setShowAdd(false)}
+            onAdded={() => void fetchAll()}
+          />
 
-      <EditTemplateModal
-        template={editingTemplate}
-        onClose={() => setEditingTemplate(null)}
-        onSaved={() => void fetchAll()}
-      />
+          <EditTemplateModal
+            template={editingTemplate}
+            onClose={() => setEditingTemplate(null)}
+            onSaved={() => void fetchAll()}
+          />
+        </>
+      )}
     </>
   );
 }

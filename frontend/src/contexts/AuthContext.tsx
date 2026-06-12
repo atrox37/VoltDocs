@@ -1,12 +1,15 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getMe, logout as apiLogout, AuthUser } from '../api/auth';
+import { getMe, logout as apiLogout, AuthUser, UserRole } from '../api/auth';
+import { hasMinRole as checkMinRole, isSuperAdmin as checkSuperAdmin } from '../auth/permissions';
 
 interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  hasMinRole: (minRole: UserRole) => boolean;
+  isSuperAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -38,8 +41,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const hasMinRole = useCallback(
+    (minRole: UserRole) => checkMinRole(user?.role, minRole),
+    [user?.role],
+  );
+
+  const isSuperAdmin = checkSuperAdmin(user?.role);
+
+  const value = useMemo(
+    () => ({ user, loading, logout, refreshUser, hasMinRole, isSuperAdmin }),
+    [user, loading, hasMinRole, isSuperAdmin],
+  );
+
   return (
-    <AuthContext.Provider value={{ user, loading, logout, refreshUser }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
