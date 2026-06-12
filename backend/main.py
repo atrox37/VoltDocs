@@ -12,7 +12,7 @@ from auth.routes import router as auth_router
 from auth.session import SessionStore
 from config import load_config
 from database import Database
-from routes import convert, files, glossary, health, settings, templates, translation, users
+from routes import convert, dashboard, files, glossary, health, settings, templates, translation, users
 from services.storage import ensure_dirs
 
 
@@ -80,6 +80,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(auth_router)
+    app.include_router(dashboard.router)
     app.include_router(convert.router)
     app.include_router(translation.router)
     app.include_router(glossary.router)

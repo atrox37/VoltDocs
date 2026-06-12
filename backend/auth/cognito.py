@@ -63,7 +63,7 @@ class CognitoClient:
         if self.client_secret:
             basic = base64.b64encode(f"{self.client_id}:{self.client_secret}".encode("utf-8")).decode("ascii")
             headers["Authorization"] = f"Basic {basic}"
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=8) as client:
             response = await client.post(f"{self.domain}/oauth2/token", data=payload, headers=headers)
             response.raise_for_status()
             data = response.json()

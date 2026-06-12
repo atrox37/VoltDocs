@@ -96,10 +96,27 @@ def _classify_segment_type(style_name: str | None, order: int, plain_text: str) 
     return "paragraph"
 
 
+_RECOVER_PARSER = etree.XMLParser(recover=True, remove_blank_text=True)
+
+
+def _parse_xml_bytes(xml_bytes: bytes) -> etree._Element | None:
+    """解析 DOCX 内部 XML，优先严格模式，失败后自动切换到容错模式。"""
+    try:
+        return etree.fromstring(xml_bytes)
+    except etree.XMLSyntaxError:
+        try:
+            # recover=True 会尽量修复不匹配的标签并返回尽可能完整的树
+            return etree.fromstring(xml_bytes, _RECOVER_PARSER)
+        except Exception:
+            return None
+
+
 def extract_segments(content: bytes) -> list[dict]:
     segments: list[dict] = []
     for part_name, xml_bytes in iter_docx_story_parts(content):
-        root = etree.fromstring(xml_bytes)
+        root = _parse_xml_bytes(xml_bytes)
+        if root is None:
+            continue
         paragraphs = _iter_paragraphs(root)
         for paragraph_index, paragraph in enumerate(paragraphs):
             style_name = _extract_style_name(paragraph)

@@ -19,8 +19,8 @@ from services.excel_exporter import export_excel
 from services.excel_parser import extract_segments as extract_excel_segments
 from services.md_exporter import export_md
 from services.md_parser import extract_segments as extract_md_segments
-from services.pptx_exporter import export_pptx
-from services.pptx_parser import extract_segments as extract_pptx_segments
+# from services.pptx_exporter import export_pptx        # PPTX translation disabled
+# from services.pptx_parser import extract_segments as extract_pptx_segments  # PPTX translation disabled
 from services.storage import create_stored_file_name, sha256_bytes
 from services.translation import translate_segments
 
@@ -91,8 +91,8 @@ def _pick_parser(filename: str):
         return "docx", extract_docx_segments
     if lower.endswith(".xlsx"):
         return "xlsx", extract_excel_segments
-    if lower.endswith(".pptx"):
-        return "pptx", extract_pptx_segments
+    # if lower.endswith(".pptx"):                        # PPTX translation disabled
+    #     return "pptx", extract_pptx_segments           # PPTX translation disabled
     if lower.endswith(".md") or lower.endswith(".markdown"):
         return "md", extract_md_segments
     raise HTTPException(status_code=400, detail="Unsupported file type")
@@ -232,29 +232,7 @@ async def _run_translation_job(app, job_id: str, content: bytes, filename: str, 
             ),
         )
 
-    # ── Write passing translations to translation memory ──────────────────────
-    import hashlib
-    for source, result in zip(segments, translated):
-        if not result["qa_pass"] or not result["draft_translation"]:
-            continue
-        src_text = source["source_text"].strip()
-        tgt_text = result["draft_translation"].strip()
-        src_hash = hashlib.sha256(src_text.encode("utf-8")).hexdigest()
-        try:
-            db.execute(
-                """
-                INSERT INTO translation_memory
-                (id, source_lang, target_lang, source_hash, source_text, target_text, quality, created_by, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(source_lang, target_lang, source_hash) DO UPDATE SET
-                    target_text = excluded.target_text,
-                    quality = excluded.quality,
-                    updated_at = excluded.updated_at
-                """,
-                (str(uuid.uuid4()), source_lang, target_lang, src_hash, src_text, tgt_text, 90, user_id, now, now),
-            )
-        except Exception:
-            pass  # TM write failure must not affect job status
+    # ── (Translation memory removed — using glossary hit counts instead) ────────
     db.execute(
         "UPDATE jobs SET status = 'succeeded', progress = 100, result_json = ?, finished_at = ? WHERE id = ?",
         (json.dumps({"totalSegments": len(segments), "sourceLang": source_lang, "targetLang": target_lang, "fileType": file_type}), now, job_id),
@@ -409,32 +387,4 @@ async def export_job(job_id: str, body: ExportRequest, request: Request, user: C
     return {"fileId": file_id, "fileName": output_name, "downloadUrl": f"/api/files/{file_id}/download"}
 
 
-# ── CSV 导出端点 ──────────────────────────────────────────────────────────────
-
-@router.get("/api/translation/memory/export-csv")
-async def export_tm_csv(request: Request, user: CurrentUser = Depends(get_current_user)):
-    """导出翻译记忆库为 CSV 文件"""
-    import csv
-    import io
-    from fastapi.responses import StreamingResponse
-
-    rows = request.app.state.db.query_all(
-        "SELECT source_lang, target_lang, source_text, target_text, quality, created_by, created_at, updated_at "
-        "FROM translation_memory ORDER BY updated_at DESC"
-    )
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(["源语言", "目标语言", "原文", "译文", "质量分", "创建人", "创建时间", "更新时间"])
-    for row in rows:
-        writer.writerow([
-            row["source_lang"], row["target_lang"],
-            row["source_text"], row["target_text"],
-            row["quality"], row["created_by"] or "",
-            row["created_at"], row["updated_at"],
-        ])
-    csv_bytes = buffer.getvalue().encode("utf-8-sig")  # utf-8-sig 让 Excel 正确识别中文
-    return StreamingResponse(
-        iter([csv_bytes]),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": 'attachment; filename*=UTF-8\'\'translation_memory.csv'},
-    )
+# ── (Translation memory export removed) ──────────────────────────────────────

@@ -1,10 +1,9 @@
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ConfigProvider, App as AntApp } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import { AuthProvider } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AppLayout from "./layouts/AppLayout";
-import Dashboard from "./pages/Dashboard";
 import Convert from "./pages/Convert";
 import Translate from "./pages/Translate";
 import Templates from "./pages/Templates";
@@ -26,16 +25,14 @@ const App = () => (
     }}
   >
     <AntApp>
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AuthProvider>
           <Routes>
-            {/* Public route — no auth required */}
             <Route path="/login" element={<Login />} />
-
-            {/* Protected routes — require authentication */}
             <Route element={<ProtectedRoute />}>
               <Route element={<AppLayout />}>
-                <Route path="/" element={<Dashboard />} />
+                {/* Default: redirect root to translate */}
+                <Route path="/" element={<Navigate to="/translate" replace />} />
                 <Route path="/convert" element={<Convert />} />
                 <Route path="/translate" element={<Translate />} />
                 <Route path="/templates" element={<Templates />} />

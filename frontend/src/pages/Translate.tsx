@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   Alert,
   App,
@@ -70,11 +70,13 @@ function ReviewModal({
   onEditsChange,
   onExported,
   onClose,
+  onSkip,
 }: {
   entry: FileEntry;
   onEditsChange: (edits: SegmentReview) => void;
   onExported: (fileId: string, fileName: string) => void;
   onClose: () => void;
+  onSkip: () => void; // skip review: export with current state and mark done
 }) {
   const { message } = App.useApp();
   const [exporting, setExporting] = useState(false);
@@ -86,8 +88,8 @@ function ReviewModal({
   const acceptSegment = (s: TranslationSegment) =>
     onEditsChange({ ...entry.edits, [s.id]: s.draftTranslation });
 
-  const handleExport = async () => {
-    if (!entry.jobId) return;
+  const doExport = async (): Promise<boolean> => {
+    if (!entry.jobId || exporting) return false;
     setExporting(true);
     try {
       const exportSegs = entry.segments.map((s) => ({
@@ -96,15 +98,40 @@ function ReviewModal({
       }));
       const result = await exportTranslation(entry.jobId, exportSegs);
       onExported(result.fileId, result.fileName);
-      message.success(`审校完成：${result.fileName}`);
-      onClose();
+      return true;
     } catch (err: unknown) {
       message.error(err instanceof Error ? err.message : "导出失败");
+      return false;
     } finally {
       setExporting(false);
     }
   };
 
+  // Auto-export when all issues resolved, then close
+  const handleAllResolvedClose = async () => {
+    const ok = await doExport();
+    if (ok) onClose();
+  };
+
+  // Skip: export whatever current state is, mark done, close
+  const handleSkip = async () => {
+    const ok = await doExport();
+    if (ok) {
+      onSkip();
+      onClose();
+    }
+  };
+
+  // Watch for all-resolved transition and auto-trigger export
+  const prevAllResolved = React.useRef(false);
+  React.useEffect(() => {
+    if (allResolved && !prevAllResolved.current && issueSegments.length > 0 && entry.reviewing) {
+      void handleAllResolvedClose();
+    }
+    prevAllResolved.current = allResolved;
+  }, [allResolved]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Only show QA-failed segments
   const reviewColumns: ColumnsType<TranslationSegment> = [
     {
       title: "#",
@@ -117,17 +144,15 @@ function ReviewModal({
       ),
     },
     {
-      title: "状态",
+      title: "QA 问题",
       key: "qa",
-      width: 100,
+      width: 200,
       render: (_: unknown, s: TranslationSegment) => {
-        if (s.qaPass)
-          return <Tag color="success" icon={<CheckCircleOutlined />} style={{ fontSize: 11 }}>通过</Tag>;
         if (s.id in entry.edits)
           return <Tag color="green" icon={<CheckOutlined />} style={{ fontSize: 11 }}>已处理</Tag>;
         return (
           <Tooltip title={s.qaReason || "QA 未通过"}>
-            <Tag color="warning" icon={<WarningOutlined />} style={{ fontSize: 11 }}>待处理</Tag>
+            <Text type="warning" style={{ fontSize: 12 }}>{s.qaReason || "QA 未通过"}</Text>
           </Tooltip>
         );
       },
@@ -135,11 +160,11 @@ function ReviewModal({
     {
       title: "原文",
       dataIndex: "sourceText",
-      width: "32%",
+      width: "28%",
       render: (v: string) => <Text style={{ fontSize: 13, lineHeight: "1.6" }}>{v}</Text>,
     },
     {
-      title: "译文",
+      title: "译文（可直接修改）",
       key: "translation",
       render: (_: unknown, s: TranslationSegment) => (
         <TextArea
@@ -148,7 +173,7 @@ function ReviewModal({
           autoSize={{ minRows: 1, maxRows: 5 }}
           style={{
             fontSize: 13,
-            borderColor: s.qaPass ? "#d9d9d9" : s.id in entry.edits ? "#52c41a" : "#faad14",
+            borderColor: s.id in entry.edits ? "#52c41a" : "#faad14",
           }}
         />
       ),
@@ -158,9 +183,9 @@ function ReviewModal({
       key: "accept",
       width: 72,
       render: (_: unknown, s: TranslationSegment) => {
-        if (s.qaPass || s.id in entry.edits) return null;
+        if (s.id in entry.edits) return null;
         return (
-          <Tooltip title="接受此译文，不作修改">
+          <Tooltip title="保留当前译文，标记为已处理">
             <Button size="small" icon={<CheckOutlined />} onClick={() => acceptSegment(s)}>
               确认
             </Button>
@@ -177,11 +202,11 @@ function ReviewModal({
         <Space>
           <Text strong>{entry.file.name}</Text>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            共 {entry.segments.length} 段
-            {issueSegments.length > 0 && (
-              <> · <Text type="warning" style={{ fontSize: 12 }}>{issueSegments.length} 个 QA 问题</Text></>
-            )}
+            {issueSegments.length} 个 QA 问题 · 已处理 {resolvedCount}/{issueSegments.length}
           </Text>
+          {allResolved && (
+            <Tag color="success" icon={<CheckCircleOutlined />} style={{ fontSize: 11 }}>审校完成</Tag>
+          )}
         </Space>
       }
       width="85vw"
@@ -189,48 +214,45 @@ function ReviewModal({
       onCancel={onClose}
       footer={
         <Space>
-          {issueSegments.length > 0 && (
+          {!allResolved && (
             <Text type="secondary" style={{ fontSize: 12 }}>
-              已处理 {resolvedCount}/{issueSegments.length} 个 QA 问题
+              还有 {issueSegments.length - resolvedCount} 个问题待处理
             </Text>
           )}
-          <Button onClick={onClose}>关闭</Button>
-          <Button
-            type="primary"
-            icon={<DownloadOutlined />}
-            loading={exporting}
-            disabled={!allResolved}
-            onClick={handleExport}
-          >
-            完成审校并导出
+          {/* Skip: export current state as-is and mark done */}
+          <Button loading={exporting} onClick={handleSkip}>
+            跳过审校
           </Button>
         </Space>
       }
     >
-      {issueSegments.length === 0 && (
-        <Alert type="success" message="所有段落均通过 QA 检查，可直接导出" showIcon style={{ marginBottom: 12 }} />
-      )}
-      {issueSegments.length > 0 && !allResolved && (
+      {allResolved ? (
+        <Alert
+          type="success"
+          message="所有 QA 问题已处理完毕，正在自动导出…"
+          showIcon
+          style={{ marginBottom: 12 }}
+        />
+      ) : (
         <Alert
           type="warning"
-          message={`还有 ${issueSegments.length - resolvedCount} 个 QA 问题待处理。可修改译文，或点击"确认"接受原译文。`}
+          message={`还有 ${issueSegments.length - resolvedCount} 个问题未处理。修改译文或点「确认」保留，所有问题处理完后自动导出。如需立即结束，点「跳过审校」。`}
           showIcon
           style={{ marginBottom: 12 }}
         />
       )}
       <Table
         columns={reviewColumns}
-        dataSource={entry.segments}
+        dataSource={issueSegments}
         rowKey="id"
         size="small"
         pagination={{ pageSize: 30, showSizeChanger: true, pageSizeOptions: ["20", "30", "50"] }}
         sticky
-        rowClassName={(s: TranslationSegment) => {
-          if (!s.qaPass && !(s.id in entry.edits)) return "qa-fail-row";
-          if (!s.qaPass && s.id in entry.edits) return "qa-fixed-row";
-          return "";
-        }}
-        scroll={{ y: "calc(80vh - 260px)" }}
+        rowClassName={(s: TranslationSegment) =>
+          s.id in entry.edits ? "qa-fixed-row" : "qa-fail-row"
+        }
+        scroll={{ y: "calc(80vh - 280px)" }}
+        locale={{ emptyText: "无 QA 问题" }}
       />
       <style>{`
         .qa-fail-row td { background: #fffbe6 !important; }
@@ -257,8 +279,8 @@ export default function Translate() {
 
   const handleBeforeUpload = (f: RcFile) => {
     const ext = f.name.split(".").pop()?.toLowerCase();
-    if (!ext || !["docx", "xlsx", "md", "markdown", "pptx"].includes(ext)) {
-      message.warning(`${f.name} 不支持，仅限 .docx / .xlsx / .md / .pptx`);
+    if (!ext || !["docx", "xlsx", "md", "markdown"].includes(ext)) {
+      message.warning(`${f.name} 不支持，仅限 .docx / .xlsx / .md`);
       return Upload.LIST_IGNORE;
     }
     const uid = f.uid;
@@ -302,7 +324,6 @@ export default function Translate() {
               } else if (status === "failed") {
                 clearInterval(timer);
                 delete pollTimers.current[entry.uid];
-                // Fetch job detail for error message
                 try {
                   const { job: failedJob } = await getTranslationJob(jobId);
                   updateEntry(entry.uid, { status: "failed", progress: 0, errorMessage: failedJob.errorMessage || undefined });
@@ -377,11 +398,12 @@ export default function Translate() {
               <Text type="secondary" style={{ fontSize: 11 }}>{e.progress}%</Text>
             </Space>
           );
-        if (e.status === "failed") return (
-          <Tooltip title={e.errorMessage || "翻译失败，请重试"}>
-            <Tag icon={<CloseCircleOutlined />} color="error" style={{ cursor: "help" }}>失败</Tag>
-          </Tooltip>
-        );
+        if (e.status === "failed")
+          return (
+            <Tooltip title={e.errorMessage || "翻译失败，请重试"}>
+              <Tag icon={<CloseCircleOutlined />} color="error" style={{ cursor: "help" }}>失败</Tag>
+            </Tooltip>
+          );
         if (e.outputFileId) return <Tag icon={<CheckCircleOutlined />} color="success">完成</Tag>;
         return <Tag color="blue">需审校</Tag>;
       },
@@ -391,47 +413,43 @@ export default function Translate() {
       key: "action",
       width: 200,
       render: (_: unknown, e: FileEntry) => {
-        // Pending: show remove button
         if (e.status === "pending") {
           return (
-            <Button
-              size="small"
-              danger
-              icon={<DeleteOutlined />}
-              onClick={() => removeEntry(e.uid)}
-            >
+            <Button size="small" danger icon={<DeleteOutlined />} onClick={() => removeEntry(e.uid)}>
               移除
             </Button>
           );
         }
         if (e.status !== "done") return null;
+        // If QA all passed (no review needed), only show download
+        const qaAllPass = e.job?.result?.allQaPass;
         return (
           <Space size={8}>
-            <Button size="small" icon={<EditOutlined />} onClick={() => void openReview(e.uid)}>
-              {e.outputFileId ? "重新审校" : "审校"}
-            </Button>
+            {!qaAllPass && (
+              <Button size="small" icon={<EditOutlined />} onClick={() => void openReview(e.uid)}>
+                {e.outputFileId ? "重新审校" : "审校"}
+              </Button>
+            )}
             {e.outputFileId && (
               <Button type="primary" size="small" icon={<DownloadOutlined />} onClick={() => downloadFile(e)}>
                 下载
               </Button>
             )}
           </Space>
-        );
-      },
+        );      },
     },
   ];
 
   return (
-    // height:100% fills the scrollable content wrapper in AppLayout
     <div style={{ maxWidth: 1100, margin: "0 auto", height: "100%", display: "flex", flexDirection: "column", gap: 16 }}>
 
       {/* Top row: upload area + language card */}
       <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexShrink: 0 }}>
-        {/* Upload dragger — no internal file list */}
+        {/* Upload dragger */}
         <div style={{ flex: 1 }}>
           <Card>
             <Dragger
-              accept=".docx,.xlsx,.md,.markdown,.pptx"
+              accept=".docx,.xlsx,.md,.markdown"
               multiple
               fileList={[]}
               beforeUpload={handleBeforeUpload}
@@ -439,68 +457,82 @@ export default function Translate() {
             >
               <p className="ant-upload-drag-icon"><InboxOutlined /></p>
               <p className="ant-upload-text">点击或拖入待翻译的文件（支持多选）</p>
-              <p className="ant-upload-hint">支持 .docx / .xlsx / .md / .pptx，可同时上传多个文件</p>
+              <p className="ant-upload-hint">支持 .docx / .xlsx / .md，可同时上传多个文件</p>
             </Dragger>
           </Card>
         </div>
 
-        {/* Language selector card — same width as Convert's right card */}
-        <Card title="翻译方向" style={{ width: 260, flexShrink: 0 }}>
-          <Space direction="vertical" style={{ width: "100%" }} size="middle">
-            <div>
-              <Text type="secondary" style={{ fontSize: 12 }}>源语言</Text>
-              <Select value={srcLang} onChange={setSrcLang} style={{ width: "100%", marginTop: 4 }}>
-                <Select.Option value="zh-CN">简体中文</Select.Option>
-                <Select.Option value="en-US">English</Select.Option>
-              </Select>
-            </div>
-            <div style={{ textAlign: "center" }}>
-              <Button shape="circle" icon={<SwapOutlined rotate={90} />} onClick={swapLangs} />
-            </div>
-            <div>
-              <Text type="secondary" style={{ fontSize: 12 }}>目标语言</Text>
-              <Select value={tgtLang} onChange={setTgtLang} style={{ width: "100%", marginTop: 4 }}>
-                <Select.Option value="en-US">English</Select.Option>
-                <Select.Option value="zh-CN">简体中文</Select.Option>
-              </Select>
-            </div>
-          </Space>
+        {/* Language card — compact inline layout */}
+        <Card title="翻译方向" style={{ width: 280, flexShrink: 0 }}>
+          {/* Source → Target on one row */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+            <Select
+              value={srcLang}
+              onChange={setSrcLang}
+              style={{ flex: 1 }}
+              size="middle"
+            >
+              <Select.Option value="zh-CN">简体中文</Select.Option>
+              <Select.Option value="en-US">English</Select.Option>
+            </Select>
+            <Button
+              type="text"
+              shape="circle"
+              icon={<SwapOutlined />}
+              onClick={swapLangs}
+              style={{ flexShrink: 0, color: "#1b3a6b" }}
+            />
+            <Select
+              value={tgtLang}
+              onChange={setTgtLang}
+              style={{ flex: 1 }}
+              size="middle"
+            >
+              <Select.Option value="en-US">English</Select.Option>
+              <Select.Option value="zh-CN">简体中文</Select.Option>
+            </Select>
+          </div>
+
           <Button
             type="primary"
             block
             size="large"
             disabled={pendingCount === 0 || srcLang === tgtLang}
             onClick={() => void startAll()}
-            style={{ marginTop: 20 }}
           >
             开始翻译{pendingCount > 0 ? `（${pendingCount} 个文件）` : ""}
           </Button>
         </Card>
       </div>
 
-      {/* File list — fills remaining height, Card body scrolls */}
-      <Card
-        size="small"
-        style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}
-        styles={{ body: { flex: 1, overflow: "auto", padding: "0 0 4px", minHeight: 0 } }}
-        title={entries.length > 0 ? `文件列表（${entries.length} 个）` : "文件列表"}
-        extra={
-          doneWithFile > 1 && allSettled ? (
-            <Button icon={<FileZipOutlined />} size="small" onClick={() => void downloadAll()}>
-              打包下载全部（{doneWithFile} 个）
-            </Button>
-          ) : null
-        }
-      >
-        <Table
-          columns={fileColumns}
-          dataSource={entries}
-          rowKey="uid"
+      {/* File list — only shown when there are entries; sticky header, body scrolls */}
+      {entries.length > 0 && (
+        <Card
           size="small"
-          pagination={false}
-          locale={{ emptyText: "拖入或点击上方区域添加文件" }}
-        />
-      </Card>
+          style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}
+          styles={{ body: { flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", padding: 0 } }}
+          title={`文件列表（${entries.length} 个）`}
+          extra={
+            doneWithFile > 1 && allSettled ? (
+              <Button icon={<FileZipOutlined />} size="small" onClick={() => void downloadAll()}>
+                打包下载全部（{doneWithFile} 个）
+              </Button>
+            ) : null
+          }
+        >
+          {/* sticky prop keeps the header fixed while tbody scrolls */}
+          <Table
+            columns={fileColumns}
+            dataSource={entries}
+            rowKey="uid"
+            size="small"
+            pagination={false}
+            sticky
+            scroll={{ y: "calc(100vh - 420px)" }}
+            style={{ flex: 1 }}
+          />
+        </Card>
+      )}
 
       {/* Review modals */}
       {entries
@@ -511,6 +543,7 @@ export default function Translate() {
             entry={e}
             onEditsChange={(edits) => updateEntry(e.uid, { edits })}
             onExported={(fileId, fileName) => updateEntry(e.uid, { outputFileId: fileId, outputFileName: fileName })}
+            onSkip={() => updateEntry(e.uid, { outputFileId: e.outputFileId || "skipped", outputFileName: e.outputFileName || e.file.name })}
             onClose={() => updateEntry(e.uid, { reviewing: false })}
           />
         ))}

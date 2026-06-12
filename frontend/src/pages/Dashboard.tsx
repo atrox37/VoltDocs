@@ -1,115 +1,319 @@
-import { Button, Card, Col, List, Progress, Row, Statistic, Tag, Typography } from "antd";
+import { useEffect, useState } from "react";
+import { Card, Col, Row, Statistic, Table, Tag, Typography, Spin } from "antd";
 import {
-  ArrowRightOutlined,
   CheckCircleOutlined,
-  ClockCircleOutlined,
   DatabaseOutlined,
   FileTextOutlined,
-  SwapOutlined,
-  SyncOutlined,
   TranslationOutlined,
 } from "@ant-design/icons";
-import { useNavigate } from "react-router-dom";
+import type { ColumnsType } from "antd/es/table";
+import { get } from "@/api/client";
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
-const modules = [
-  { title: "文档转换", desc: ".md 与 Word 双向转换，支持模板化输出", icon: <SwapOutlined />, path: "/convert", stat: "本周 128 次" },
-  { title: "文档翻译", desc: "支持 Word / Excel 双向翻译，翻译后进入个人审校", icon: <TranslationOutlined />, path: "/translate", stat: "进行中 3 个" },
-  { title: "模板中心", desc: "上传和管理 Word 模板，统一导出版式", icon: <FileTextOutlined />, path: "/templates", stat: "1 个模板" },
-  { title: "术语库", desc: "维护一套可双向使用的中英术语对", icon: <DatabaseOutlined />, path: "/memory", stat: "88 条术语" },
-];
+// ── Types ──────────────────────────────────────────────────────────────────
 
-const recentTasks = [
-  { name: "安装手册 v3.2.docx", type: "中文 -> English", time: "刚刚", status: "success" },
-  { name: "BOM 清单.xlsx", type: "English -> 中文", time: "12 分钟前", status: "reviewing" },
-  { name: "部署说明.docx", type: "Word -> .md", time: "1 小时前", status: "success" },
-  { name: "项目说明.md", type: ".md -> Word", time: "今天 09:14", status: "success" },
-];
+interface TopTerm {
+  sourceTerm: string;
+  targetTerm: string;
+  sourceLang: string;
+  targetLang: string;
+  hitCount: number;
+}
+
+interface LangPair {
+  src: string;
+  tgt: string;
+  count: number;
+}
+
+interface RecentJob {
+  id: string;
+  status: string;
+  fileName: string;
+  sourceLang: string;
+  targetLang: string;
+  createdAt: string;
+  finishedAt?: string;
+}
+
+interface DashboardStats {
+  glossary: { total: number; enabled: number };
+  translationMemory: { total: number };
+  jobs: { total: number; succeeded: number };
+  langPairs: LangPair[];
+  topTerms: TopTerm[];
+  recentJobs: RecentJob[];
+}
+
+const STATUS_COLOR: Record<string, string> = {
+  succeeded: "success",
+  running: "processing",
+  failed: "error",
+  queued: "default",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  succeeded: "完成",
+  running: "翻译中",
+  failed: "失败",
+  queued: "排队中",
+};
+
+// ── Component ──────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
-  const navigate = useNavigate();
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await get<DashboardStats>("/dashboard/stats");
+        setStats(data);
+      } catch {
+        // fail silently — dashboard is read-only
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "60vh" }}>
+        <Spin size="large" />
+      </div>
+    );
+  }
+
+  // ── Top terms table ───────────────────────────────────────────────────────
+  const termColumns: ColumnsType<TopTerm> = [
+    {
+      title: "排名",
+      key: "rank",
+      width: 56,
+      render: (_: unknown, __: TopTerm, index: number) => (
+        <Text type="secondary" style={{ fontFamily: "monospace" }}>{index + 1}</Text>
+      ),
+    },
+    {
+      title: "原文术语",
+      dataIndex: "sourceTerm",
+      key: "sourceTerm",
+      render: (v: string) => <Text strong>{v}</Text>,
+    },
+    {
+      title: "译文术语",
+      dataIndex: "targetTerm",
+      key: "targetTerm",
+    },
+    {
+      title: "语言对",
+      key: "lang",
+      width: 120,
+      render: (_: unknown, row: TopTerm) => (
+        <Text type="secondary" style={{ fontSize: 12 }}>{row.sourceLang} → {row.targetLang}</Text>
+      ),
+    },
+    {
+      title: "匹配次数",
+      dataIndex: "hitCount",
+      key: "hitCount",
+      width: 100,
+      align: "right" as const,
+      render: (v: number) => <Text style={{ fontFamily: "monospace", color: "#1b3a6b" }}>{v}</Text>,
+    },
+  ];
+
+  // ── Recent jobs table ─────────────────────────────────────────────────────
+  const jobColumns: ColumnsType<RecentJob> = [
+    {
+      title: "文件名",
+      dataIndex: "fileName",
+      key: "fileName",
+      ellipsis: true,
+      render: (v: string) => <Text>{v}</Text>,
+    },
+    {
+      title: "翻译方向",
+      key: "lang",
+      width: 140,
+      render: (_: unknown, row: RecentJob) => (
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          {row.sourceLang} → {row.targetLang}
+        </Text>
+      ),
+    },
+    {
+      title: "状态",
+      dataIndex: "status",
+      key: "status",
+      width: 90,
+      render: (v: string) => (
+        <Tag color={STATUS_COLOR[v] ?? "default"}>{STATUS_LABEL[v] ?? v}</Tag>
+      ),
+    },
+    {
+      title: "提交时间",
+      dataIndex: "createdAt",
+      key: "createdAt",
+      width: 170,
+      render: (v: string) => (
+        <Text style={{ fontSize: 12, fontFamily: "monospace" }}>
+          {new Date(v).toLocaleString("zh-CN")}
+        </Text>
+      ),
+    },
+  ];
 
   return (
-    <div style={{ padding: 24 }}>
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+    <div style={{ padding: "0 0 24px" }}>
+      {/* ── Summary stats ── */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
         <Col xs={12} sm={6}>
           <Card size="small">
-            <Statistic title="本月处理" value={342} suffix="份" />
+            <Statistic
+              title="术语库"
+              value={stats?.glossary.total ?? 0}
+              suffix="条"
+              prefix={<DatabaseOutlined style={{ fontSize: 16, color: "#1b3a6b" }} />}
+            />
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              启用 {stats?.glossary.enabled ?? 0} 条
+            </Text>
           </Card>
         </Col>
         <Col xs={12} sm={6}>
           <Card size="small">
-            <Statistic title="翻译字数" value="186K" suffix="字" />
+            <Statistic
+              title="翻译记忆"
+              value={stats?.translationMemory.total ?? 0}
+              suffix="段"
+              prefix={<FileTextOutlined style={{ fontSize: 16, color: "#1b3a6b" }} />}
+            />
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              已存入记忆库
+            </Text>
           </Card>
         </Col>
         <Col xs={12} sm={6}>
           <Card size="small">
-            <Statistic title="术语覆盖率" value={67} suffix="%" />
+            <Statistic
+              title="翻译任务"
+              value={stats?.jobs.total ?? 0}
+              suffix="个"
+              prefix={<TranslationOutlined style={{ fontSize: 16, color: "#1b3a6b" }} />}
+            />
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              成功 {stats?.jobs.succeeded ?? 0} 个
+            </Text>
           </Card>
         </Col>
         <Col xs={12} sm={6}>
           <Card size="small">
-            <Statistic title="平均耗时" value={12.4} suffix="分钟" />
+            <Statistic
+              title="成功率"
+              value={
+                stats && stats.jobs.total > 0
+                  ? Math.round((stats.jobs.succeeded / stats.jobs.total) * 100)
+                  : 0
+              }
+              suffix="%"
+              prefix={<CheckCircleOutlined style={{ fontSize: 16, color: "#52c41a" }} />}
+            />
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              QA 通过任务占比
+            </Text>
           </Card>
         </Col>
-      </Row>
-
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        {modules.map((module) => (
-          <Col xs={24} sm={12} lg={6} key={module.path}>
-            <Card hoverable onClick={() => navigate(module.path)} style={{ height: "100%" }}>
-              <div style={{ fontSize: 28, color: "#1b3a6b", marginBottom: 12 }}>{module.icon}</div>
-              <Title level={5} style={{ marginBottom: 4 }}>
-                {module.title}
-              </Title>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {module.desc}
-              </Text>
-              <div style={{ marginTop: 12, fontSize: 11, color: "#999", fontFamily: "monospace" }}>{module.stat}</div>
-            </Card>
-          </Col>
-        ))}
       </Row>
 
       <Row gutter={[16, 16]}>
-        <Col xs={24} lg={8}>
-          <Card title="术语使用情况" extra={<Button type="link" size="small" onClick={() => navigate("/memory")}>查看 <ArrowRightOutlined /></Button>}>
-            <Statistic title="本周术语命中率" value={67} suffix="%" style={{ marginBottom: 16 }} />
-            <div style={{ marginBottom: 8 }}>
-              <Text type="secondary" style={{ fontSize: 12 }}>精确匹配</Text>
-              <Progress percent={67} size="small" strokeColor="#1b3a6b" />
-            </div>
-            <div>
-              <Text type="secondary" style={{ fontSize: 12 }}>补充匹配</Text>
-              <Progress percent={32} size="small" strokeColor="#6b9fd4" />
-            </div>
+        {/* ── Top terms ── */}
+        <Col xs={24} lg={14}>
+          <Card
+            title="最常命中的术语"
+            size="small"
+            extra={
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                基于翻译记忆库匹配次数排序
+              </Text>
+            }
+          >
+            {stats && stats.topTerms.length > 0 ? (
+              <Table
+                dataSource={stats.topTerms}
+                columns={termColumns}
+                rowKey={(r) => `${r.sourceLang}-${r.sourceTerm}`}
+                size="small"
+                pagination={{ pageSize: 10, showSizeChanger: false, size: "small" }}
+                scroll={{ y: 320 }}
+              />
+            ) : (
+              <div style={{ padding: "32px 0", textAlign: "center" }}>
+                <Text type="secondary">暂无数据 — 完成翻译后术语命中数据将自动统计</Text>
+              </div>
+            )}
           </Card>
         </Col>
-        <Col xs={24} lg={16}>
-          <Card title="最近任务" extra={<Button type="link" size="small">查看全部 <ArrowRightOutlined /></Button>}>
-            <List
-              size="small"
-              dataSource={recentTasks}
-              renderItem={(item) => (
-                <List.Item
-                  extra={
-                    item.status === "success" ? (
-                      <Tag icon={<CheckCircleOutlined />} color="success">成功</Tag>
-                    ) : (
-                      <Tag icon={<SyncOutlined spin />} color="processing">审校中</Tag>
-                    )
-                  }
-                >
-                  <List.Item.Meta
-                    avatar={<ClockCircleOutlined style={{ fontSize: 16, color: "#999" }} />}
-                    title={<Text style={{ fontSize: 13 }}>{item.name}</Text>}
-                    description={<Text type="secondary" style={{ fontSize: 11 }}>{item.type} · {item.time}</Text>}
+
+        {/* ── Right column: lang pairs + recent jobs ── */}
+        <Col xs={24} lg={10}>
+          <Row gutter={[0, 16]}>
+            {/* Lang pairs */}
+            <Col span={24}>
+              <Card title="语言对分布" size="small">
+                {stats && stats.langPairs.length > 0 ? (
+                  <Table
+                    dataSource={stats.langPairs}
+                    rowKey={(r) => `${r.src}-${r.tgt}`}
+                    size="small"
+                    pagination={false}
+                    columns={[
+                      {
+                        title: "语言对",
+                        key: "pair",
+                        render: (_: unknown, r: LangPair) => (
+                          <Text>{r.src} → {r.tgt}</Text>
+                        ),
+                      },
+                      {
+                        title: "任务数",
+                        dataIndex: "count",
+                        key: "count",
+                        width: 80,
+                        align: "right" as const,
+                        render: (v: number) => (
+                          <Text style={{ fontFamily: "monospace", color: "#1b3a6b" }}>{v}</Text>
+                        ),
+                      },
+                    ]}
                   />
-                </List.Item>
-              )}
-            />
-          </Card>
+                ) : (
+                  <Text type="secondary" style={{ fontSize: 12 }}>暂无翻译任务数据</Text>
+                )}
+              </Card>
+            </Col>
+
+            {/* Recent jobs */}
+            <Col span={24}>
+              <Card title="最近翻译任务" size="small">
+                {stats && stats.recentJobs.length > 0 ? (
+                  <Table
+                    dataSource={stats.recentJobs}
+                    columns={jobColumns}
+                    rowKey="id"
+                    size="small"
+                    pagination={false}
+                    scroll={{ y: 200 }}
+                  />
+                ) : (
+                  <Text type="secondary" style={{ fontSize: 12 }}>暂无翻译任务</Text>
+                )}
+              </Card>
+            </Col>
+          </Row>
         </Col>
       </Row>
     </div>

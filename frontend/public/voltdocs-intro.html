@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VoltDocs 平台讲解页</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;800&family=Space+Grotesk:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/voltdocs-intro.css" />
+  </head>
+  <body>
+    <div class="page-progress" aria-hidden="true"></div>
+
+    <header class="hero">
+      <nav class="topbar">
+        <div class="brand">
+          <span class="brand-mark">V</span>
+          <span class="brand-name">VoltDocs</span>
+        </div>
+        <div class="nav-links">
+          <a href="#journey">开发思路</a>
+          <a href="#architecture">整体架构</a>
+          <a href="#usage">如何使用</a>
+        </div>
+      </nav>
+
+      <div class="hero-grid">
+        <section class="hero-copy reveal">
+          <p class="eyebrow">面向非技术同事的讲解页面</p>
+          <h1>把文档翻译、格式保留和术语统一，放进同一个工作平台。</h1>
+          <p class="hero-text">
+            VoltDocs 不是单纯的“翻译网站”，而是一个面向实际交付场景的文档处理平台。
+            它解决的核心问题是：文档要翻得快，更要翻得稳、翻得统一、翻完能直接交付。
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="#journey">先看为什么做</a>
+            <a class="button secondary" href="#usage">直接看怎么用</a>
+          </div>
+        </section>
+
+        <aside class="hero-panel reveal">
+          <div class="panel-card">
+            <p class="panel-title">这页适合讲什么</p>
+            <ul class="panel-list">
+              <li>为什么我们没有继续用通用翻译工具</li>
+              <li>为什么这个平台要分“前台、后台、AI、术语库”</li>
+              <li>为什么它更适合真实业务交付，而不是一次性演示</li>
+            </ul>
+          </div>
+          <div class="stats-row">
+            <div class="stat-card">
+              <strong>3</strong>
+              <span>个讲解主题</span>
+            </div>
+            <div class="stat-card">
+              <strong>1</strong>
+              <span>套统一流程</span>
+            </div>
+            <div class="stat-card">
+              <strong>多</strong>
+              <span>文档格式支持</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <main>
+      <section class="section intro reveal">
+        <div class="section-heading">
+          <p class="section-kicker">平台定位</p>
+          <h2>先用一句话介绍 VoltDocs</h2>
+        </div>
+        <div class="intro-card">
+          <p>
+            VoltDocs 是一个面向企业内部文档工作的智能平台，用来处理
+            <strong>翻译</strong>、<strong>格式转换</strong>、<strong>术语统一</strong>
+            和 <strong>人工复核</strong>。它的目标不是替代人，而是把重复劳动交给系统，把最终把关留给业务人员。
+          </p>
+        </div>
+      </section>
+
+      <section class="section" id="journey">
+        <div class="section-heading reveal">
+          <p class="section-kicker">开发工具的思路历程</p>
+          <h2>这个平台不是一开始就这么复杂，而是被实际问题一步步“逼”出来的。</h2>
+        </div>
+
+        <div class="timeline">
+          <article class="timeline-item reveal">
+            <span class="timeline-index">01</span>
+            <div class="timeline-content">
+              <h3>最早的问题：翻译工作重复，而且结果不稳定</h3>
+              <p>
+                大家最先遇到的痛点不是“没有 AI”，而是同一份资料每次都要重复整理、复制、粘贴、检查。更麻烦的是，同一个专业词，不同人会翻成不同版本。
+              </p>
+            </div>
+          </article>
+
+          <article class="timeline-item reveal">
+            <span class="timeline-index">02</span>
+            <div class="timeline-content">
+              <h3>第二个问题：通用翻译工具能出文字，但交不了文档</h3>
+              <p>
+                如果只是把句子翻出来，很多工具都能做到；但业务真正需要的是一份可以直接发给客户或海外团队的文档。图片、表格、粗体、编号、模板格式都不能乱。
+              </p>
+            </div>
+          </article>
+
+          <article class="timeline-item reveal">
+            <span class="timeline-index">03</span>
+            <div class="timeline-content">
+              <h3>第三个问题：AI 有能力，但需要“规则”约束</h3>
+              <p>
+                纯粹依赖 AI 自由发挥，会出现术语不统一、数字漏掉、标点风格不一致等问题。所以平台加入了术语库和 QA 检查，让 AI 更像“按规范工作的助手”。
+              </p>
+            </div>
+          </article>
+
+          <article class="timeline-item reveal">
+            <span class="timeline-index">04</span>
+            <div class="timeline-content">
+              <h3>最终形成的平台思路：自动化处理 + 人工最后确认</h3>
+              <p>
+                平台负责提速、统一格式、降低重复劳动；人负责判断内容是否符合业务语境。这样既能提高效率，也能控制交付质量。
+              </p>
+            </div>
+          </article>
+        </div>
+
+        <div class="image-placeholder reveal">
+          <div class="placeholder-art">
+            <span>预留插图位置 A</span>
+          </div>
+          <p class="placeholder-caption">
+            建议插图说明：展示“传统文档处理方式”和“VoltDocs 平台流程”的对比图。
+            左侧可表现为多人分别使用不同工具、术语不一致、格式被打乱；右侧表现为统一平台接入、统一术语、统一输出。
+          </p>
+        </div>
+      </section>
+
+      <section class="section" id="architecture">
+        <div class="section-heading reveal">
+          <p class="section-kicker">工具的整体架构</p>
+          <h2>可以把它理解成一条有分工的处理链路，而不是一个单点工具。</h2>
+        </div>
+
+        <div class="architecture-grid">
+          <article class="arch-card reveal">
+            <p class="arch-label">01 前台页面</p>
+            <h3>用户看到和操作的入口</h3>
+            <p>
+              同事通过浏览器访问页面，上传文件、选择语言方向、查看进度、下载结果。对使用者来说，这里就是整个平台的“工作台”。
+            </p>
+          </article>
+
+          <article class="arch-card reveal">
+            <p class="arch-label">02 后台服务</p>
+            <h3>负责把任务拆开并组织起来</h3>
+            <p>
+              后台会识别文件类型，拆出可以处理的文本段落，按批次提交给 AI，再把结果收回、检查、重组，最后输出成新的文件。
+            </p>
+          </article>
+
+          <article class="arch-card reveal">
+            <p class="arch-label">03 AI 能力层</p>
+            <h3>负责语言理解和翻译生成</h3>
+            <p>
+              AI 的价值在于理解上下文、生成自然表达，但它不是单独运行的；它需要在平台规则内工作，才能符合企业文档场景。
+            </p>
+          </article>
+
+          <article class="arch-card reveal">
+            <p class="arch-label">04 术语库与 QA</p>
+            <h3>负责把“灵活”变成“可控”</h3>
+            <p>
+              术语库保证关键词翻译一致，QA 规则负责发现明显风险，例如数字缺失、格式丢失、语言方向错误等，避免错误直接流向最终交付。
+            </p>
+          </article>
+        </div>
+
+        <div class="flow-panel reveal">
+          <h3>一条更容易讲给非技术同事的架构描述</h3>
+          <div class="flow-steps">
+            <div class="flow-step">上传文档</div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">后台拆解内容</div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">AI 按术语规则翻译</div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">系统自动检查</div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">人工确认并导出</div>
+          </div>
+        </div>
+
+        <div class="image-placeholder reveal">
+          <div class="placeholder-art">
+            <span>预留插图位置 B</span>
+          </div>
+          <p class="placeholder-caption">
+            建议插图说明：绘制“平台整体架构示意图”。
+            画面可从左到右依次为“用户浏览器”“网页界面”“后台服务”“AI 模型”“术语库 / QA 规则”“输出文档”，使用流程箭头连接，强调每一层各司其职。
+          </p>
+        </div>
+      </section>
+
+      <section class="section principles">
+        <div class="section-heading reveal">
+          <p class="section-kicker">平台价值</p>
+          <h2>如果只记住三个点，建议记住这三个。</h2>
+        </div>
+
+        <div class="principle-grid">
+          <article class="principle-card reveal">
+            <span class="principle-no">A</span>
+            <h3>不是只翻文字，而是交付文档</h3>
+            <p>平台要保住图片、表格、样式和结构，这决定了结果能不能直接对外使用。</p>
+          </article>
+          <article class="principle-card reveal">
+            <span class="principle-no">B</span>
+            <h3>不是只求速度，而是速度和一致性一起要</h3>
+            <p>术语库和规则检查的价值，在于让多人协作时仍然保持统一口径。</p>
+          </article>
+          <article class="principle-card reveal">
+            <span class="principle-no">C</span>
+            <h3>不是替代人，而是让人只处理关键判断</h3>
+            <p>系统处理重复工作，人聚焦审核与决策，这才符合真实业务流程。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="usage">
+        <div class="section-heading reveal">
+          <p class="section-kicker">如何使用该工具</p>
+          <h2>日常使用可以按“登录、上传、检查、导出”来理解。</h2>
+        </div>
+
+        <div class="usage-grid">
+          <article class="usage-card reveal">
+            <span class="usage-step">Step 1</span>
+            <h3>登录平台</h3>
+            <p>
+              通过公司分配的访问地址进入平台，使用企业账号登录。登录后，左侧菜单会显示你有权限使用的功能模块。
+            </p>
+          </article>
+
+          <article class="usage-card reveal">
+            <span class="usage-step">Step 2</span>
+            <h3>选择业务场景</h3>
+            <p>
+              如果要翻译文档，就进入“文档翻译”；如果要在 Markdown 和 Word 之间互转，就进入“文档转换”；如果要统一专业词汇，就进入“术语库”。
+            </p>
+          </article>
+
+          <article class="usage-card reveal">
+            <span class="usage-step">Step 3</span>
+            <h3>上传文件并发起任务</h3>
+            <p>
+              上传 Word、Excel 或 Markdown 文件，选择语言方向，然后启动任务。系统会自动在后台处理，不需要手工一段段复制。
+            </p>
+          </article>
+
+          <article class="usage-card reveal">
+            <span class="usage-step">Step 4</span>
+            <h3>查看进度和状态</h3>
+            <p>
+              页面会显示任务进度。如果结果全部通过检查，可以直接下载；如果有风险段落，会提示进入复核界面处理。
+            </p>
+          </article>
+
+          <article class="usage-card reveal">
+            <span class="usage-step">Step 5</span>
+            <h3>按需要进行人工复核</h3>
+            <p>
+              对于术语不确定、表达需调整或 QA 标红的内容，可以直接在复核界面修改，再生成最终文档。
+            </p>
+          </article>
+
+          <article class="usage-card reveal">
+            <span class="usage-step">Step 6</span>
+            <h3>导出并交付</h3>
+            <p>
+              完成后导出结果文件。理想状态下，输出文档已经接近可以直接发送给客户、合作伙伴或海外团队的版本。
+            </p>
+          </article>
+        </div>
+
+        <div class="image-placeholder reveal">
+          <div class="placeholder-art">
+            <span>预留插图位置 C</span>
+          </div>
+          <p class="placeholder-caption">
+            建议插图说明：展示平台的实际使用流程图或界面拼图。
+            可包含“登录页”“上传翻译页”“进度列表”“术语库页面”“复核弹窗”等几个关键界面的组合，让非技术同事一眼看出使用路径。
+          </p>
+        </div>
+      </section>
+
+      <section class="section faq">
+        <div class="section-heading reveal">
+          <p class="section-kicker">讲解时可直接回答的问题</p>
+          <h2>下面这几句，适合用来快速回应现场提问。</h2>
+        </div>
+
+        <div class="faq-list">
+          <article class="faq-item reveal">
+            <h3>它和普通翻译工具最大的区别是什么？</h3>
+            <p>普通工具偏向“翻一句话”，VoltDocs 偏向“交一份文档”。</p>
+          </article>
+          <article class="faq-item reveal">
+            <h3>为什么要有术语库？</h3>
+            <p>因为企业文档最怕同一个概念出现多个译法，术语库就是统一口径的基础设施。</p>
+          </article>
+          <article class="faq-item reveal">
+            <h3>为什么还需要人工复核？</h3>
+            <p>AI 能大幅减少重复劳动，但最终交付是否符合业务语境，仍然需要人来做最后判断。</p>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer reveal">
+      <p>VoltDocs 平台讲解页</p>
+      <p>建议访问路径：`/voltdocs-intro.html`</p>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/ScrollTrigger.min.js"></script>
+    <script src="/voltdocs-intro.js"></script>
+  </body>
+</html>

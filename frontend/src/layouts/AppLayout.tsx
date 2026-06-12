@@ -3,7 +3,6 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Avatar, Button, Dropdown, Layout, Menu, Typography } from "antd";
 import {
   ContainerOutlined,
-  DashboardOutlined,
   DatabaseOutlined,
   FileTextOutlined,
   LogoutOutlined,
@@ -29,7 +28,6 @@ function buildMenuItems(isAdmin: boolean): MenuProps["items"] {
   }
 
   return [
-    { key: "/", icon: <DashboardOutlined />, label: "工作台" },
     {
       type: "group",
       label: "工作流",
@@ -84,18 +82,13 @@ export default function AppLayout() {
   ];
 
   const pageTitles: Record<string, { title: string; subtitle: string }> = {
-    "/": { title: "", subtitle: "" },
     "/convert": {
       title: "文档转换",
-      subtitle: "支持 .md 与 Word 双向转换，并可在导出 Word 时套用模板。",
+      subtitle: "将 Markdown 文件转换为 Word 文档，支持套用公司模板统一输出格式。",
     },
     "/translate": {
       title: "文档翻译",
       subtitle: "上传 Word 或 Excel 文档，创建双向翻译任务并进入个人审校流程。",
-    },
-    "/reviews": {
-      title: "翻译审校",
-      subtitle: "查看翻译结果，处理 QA 问题，并导出当前用户自己的修订稿。",
     },
     "/templates": {
       title: "模板中心",
@@ -200,7 +193,7 @@ export default function AppLayout() {
             height: "calc(100vh - 64px)",
           }}
         >
-          {pathname !== "/" && current.title && (
+          {current.title && (
             <div style={{ padding: "16px 24px 0", flexShrink: 0 }}>
               <Typography.Title level={4} style={{ marginBottom: 0 }}>
                 {current.title}
@@ -213,7 +206,7 @@ export default function AppLayout() {
           <div style={{
             flex: 1,
             overflow: "auto",
-            padding: pathname === "/" ? 0 : "12px 24px 24px",
+            padding: "12px 24px 24px",
             minHeight: 0,
           }}>
             <Outlet />

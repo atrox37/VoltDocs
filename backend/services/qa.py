@@ -50,24 +50,32 @@ def check_numbers(source: str, translation: str, **_) -> str | None:
 # ── Rule 3: Inline formatting markers ────────────────────────────────────────
 
 def check_inline_markers(source: str, translation: str, **_) -> str | None:
-    """Bold / italic / strikethrough markers present in source must survive."""
-    for marker, name in (("**", "粗体"), ("~~", "删除线")):
-        src_count = source.count(marker)
-        tgt_count = translation.count(marker)
-        # Must have same count (markers come in pairs)
-        if src_count and tgt_count != src_count:
-            return f"格式标记丢失或多余: {marker}（原文 {src_count} 个，译文 {tgt_count} 个）"
+    """Check that bold/italic/strikethrough markers are preserved in translation.
 
-    # Single-asterisk italic: count occurrences that are NOT part of **
-    def _italic_count(text: str) -> int:
-        # Replace ** first to not double-count
-        cleaned = text.replace("**", "")
-        return cleaned.count("*")
+    We only verify presence (source has marker → translation must also have it),
+    NOT exact count equality.  AI may legitimately merge adjacent bold spans
+    like **A****B** → **A B**, which reduces marker count but is correct.
+    """
+    def _has_bold(text: str) -> bool:
+        return "**" in text
 
-    src_italic = _italic_count(source)
-    tgt_italic = _italic_count(translation)
-    if src_italic and tgt_italic != src_italic:
-        return f"格式标记丢失或多余: *（原文 {src_italic} 个，译文 {tgt_italic} 个）"
+    def _has_strike(text: str) -> bool:
+        return "~~" in text
+
+    def _has_italic(text: str) -> bool:
+        # Remove ** and ~~ first, then check for lone *
+        # A single ~ is NOT italic — only * is italic marker
+        cleaned = text.replace("**", "").replace("~~", "").replace("~", "")
+        return "*" in cleaned
+
+    if _has_bold(source) and not _has_bold(translation):
+        return "格式标记丢失: **（粗体标记在译文中消失）"
+
+    if _has_strike(source) and not _has_strike(translation):
+        return "格式标记丢失: ~~（删除线标记在译文中消失）"
+
+    if _has_italic(source) and not _has_italic(translation):
+        return "格式标记丢失: *（斜体标记在译文中消失）"
 
     return None
 
@@ -139,20 +147,28 @@ def check_required_terms(
     glossary_terms: list[dict] | None = None,
     **_,
 ) -> str | None:
-    """Verify that mandatory glossary terms are used in the translation.
-
-    Only checks terms where ``required`` is truthy AND the source term
-    actually appears in the source text.
+    """Verify that ALL glossary terms appearing in the source are correctly
+    translated in the output.  Every term in the glossary is treated as
+    mandatory — if it appears in the source text it MUST appear (as the
+    designated target translation) in the translation.
     """
     if not glossary_terms:
         return None
 
     is_zh_to_en = source_lang.startswith("zh") and target_lang.startswith("en")
+
+    # Strip formatting markers for matching to avoid false negatives like
+    # "逆变器" not found in "**逆变器**"
+    import re
+    def _strip(text: str) -> str:
+        return re.sub(r"\*{1,3}|~~", "", text)
+
+    source_plain = _strip(source).lower()
+    translation_plain = _strip(translation).lower()
+
     missing_terms: list[str] = []
 
     for term in glossary_terms:
-        if not term.get("required"):
-            continue
         src_term: str = term.get("source", "")
         tgt_term: str = term.get("target", "")
         if not src_term or not tgt_term:
@@ -162,11 +178,11 @@ def check_required_terms(
         if not is_zh_to_en:
             src_term, tgt_term = tgt_term, src_term
 
-        if src_term.lower() in source.lower() and tgt_term.lower() not in translation.lower():
+        if src_term.lower() in source_plain and tgt_term.lower() not in translation_plain:
             missing_terms.append(f"{src_term} → {tgt_term}")
 
     if missing_terms:
-        return f"必须使用的术语未出现在译文中: {'; '.join(missing_terms)}"
+        return f"术语未按术语表翻译: {'; '.join(missing_terms)}"
     return None
 
 

@@ -31,7 +31,7 @@ def _split_into_batches(
     - A batch is sealed when adding the next segment would exceed max_bytes OR
       the batch already has max_segments entries.
     - A single segment that exceeds max_bytes on its own is placed alone in a
-      batch (at-least-one guarantee — never blocks progress).
+      batch (at-least-one guarantee -- never blocks progress).
     """
     batches: list[list[dict]] = []
     current_batch: list[dict] = []
@@ -74,7 +74,7 @@ async def _post_with_retry(
                 last_exc = exc
                 delay = _RETRY_BASE_DELAY * (2 ** attempt)
                 logger.warning(
-                    "Translation request network error (attempt %d/%d): %s — retrying in %.1fs",
+                    "Translation request network error (attempt %d/%d): %s - retrying in %.1fs",
                     attempt + 1, _MAX_RETRIES, exc, delay,
                 )
                 await asyncio.sleep(delay)
@@ -90,7 +90,7 @@ async def _post_with_retry(
         )
         delay = _RETRY_BASE_DELAY * (2 ** attempt)
         logger.warning(
-            "Translation request got %d (attempt %d/%d) — retrying in %.1fs",
+            "Translation request got %d (attempt %d/%d) - retrying in %.1fs",
             response.status_code, attempt + 1, _MAX_RETRIES, delay,
         )
         await asyncio.sleep(delay)
@@ -136,53 +136,15 @@ async def _translate_chunk_via_lambda(
     if bearer_token:
         headers["Authorization"] = f"Bearer {bearer_token}"
 
-    try:
-        response = await _post_with_retry(
-            client,
-            f"{lambda_url.rstrip('/')}/translate/batch",
-            payload,
-            headers,
-            semaphore,
-        )
-        response.raise_for_status()
-        return response.json().get("segments", [])
-    except httpx.HTTPStatusError as exc:
-        status_code = exc.response.status_code if exc.response is not None else None
-        if status_code in _RETRYABLE_STATUSES and len(chunk) > 1:
-            midpoint = max(1, len(chunk) // 2)
-            logger.warning(
-                "Lambda returned %s for a batch of %d segments; splitting into %d and %d",
-                status_code,
-                len(chunk),
-                midpoint,
-                len(chunk) - midpoint,
-            )
-            left = await _translate_chunk_via_lambda(
-                chunk=chunk[:midpoint],
-                source_lang=source_lang,
-                target_lang=target_lang,
-                bearer_token=bearer_token,
-                lambda_url=lambda_url,
-                client=client,
-                semaphore=semaphore,
-                glossary_terms=glossary_terms,
-                glossary_max_terms=glossary_max_terms,
-                glossary_max_prompt_chars=glossary_max_prompt_chars,
-            )
-            right = await _translate_chunk_via_lambda(
-                chunk=chunk[midpoint:],
-                source_lang=source_lang,
-                target_lang=target_lang,
-                bearer_token=bearer_token,
-                lambda_url=lambda_url,
-                client=client,
-                semaphore=semaphore,
-                glossary_terms=glossary_terms,
-                glossary_max_terms=glossary_max_terms,
-                glossary_max_prompt_chars=glossary_max_prompt_chars,
-            )
-            return left + right
-        raise
+    response = await _post_with_retry(
+        client,
+        f"{lambda_url.rstrip('/')}/translate/batch",
+        payload,
+        headers,
+        semaphore,
+    )
+    response.raise_for_status()
+    return response.json().get("segments", [])
 
 
 async def _translate_chunk_via_bedrock(
@@ -229,11 +191,9 @@ async def translate_segments(
     glossary_max_prompt_chars: int = 12000,
     batch_max_bytes: int = 5000,
     batch_max_segments: int = 120,
-    # Bedrock direct mode (used when lambda_url is empty)
-    bedrock_model_id: str = "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    bedrock_model_id: str = "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     bedrock_region: str = "us-east-1",
     bedrock_aws_profile: str = "",
-    # Optional callback: called after each batch with (completed_batches, total_batches)
     on_batch_done: "Callable[[int, int], None] | None" = None,
 ) -> list[dict]:
     use_bedrock = not lambda_url.strip()
@@ -245,7 +205,7 @@ async def translate_segments(
 
     batches = _split_into_batches(segments, batch_max_bytes, batch_max_segments)
 
-    # ── Bedrock direct mode ───────────────────────────────────────────────────
+    # -- Bedrock direct mode --
     if use_bedrock:
         semaphore = asyncio.Semaphore(_MAX_CONCURRENCY)
         total_batches = len(batches)
@@ -302,7 +262,7 @@ async def translate_segments(
             })
         return translated
 
-    # ── Lambda mode ───────────────────────────────────────────────────────────
+    # -- Lambda mode --
     semaphore = asyncio.Semaphore(_MAX_CONCURRENCY)
     total_batches = len(batches)
     completed = 0

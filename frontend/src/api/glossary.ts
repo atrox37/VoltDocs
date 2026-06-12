@@ -91,3 +91,7 @@ export function commitGlossaryImport(rows: GlossaryImportPreviewRow[]) {
     { rows }
   );
 }
+
+export function getTermHitCounts() {
+  return get<{ hitCounts: Record<string, number> }>("/glossary/hit-counts");
+}

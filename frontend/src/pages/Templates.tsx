@@ -294,13 +294,13 @@ export default function Templates() {
       title: "上传时间",
       dataIndex: "createdAt",
       key: "createdAt",
-      width: 180,
+      width: 160,
       render: (value: string) => new Date(value).toLocaleString("zh-CN"),
     },
     {
       title: "操作",
       key: "action",
-      width: 200,
+      width: 240,
       render: (_: unknown, record: Template) => (
         <Space>
           <Button

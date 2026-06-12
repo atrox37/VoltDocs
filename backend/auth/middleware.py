@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 
@@ -24,6 +25,7 @@ async def _try_refresh(request: Request, session_id: str) -> None:
 
     Failures are swallowed — a stale token is better than a broken request.
     The session itself remains valid even if the refresh fails.
+    Uses a short timeout so a network hiccup never blocks the request.
     """
     store: SessionStore = request.app.state.session_store
     session = await store.get(session_id)
@@ -34,16 +36,20 @@ async def _try_refresh(request: Request, session_id: str) -> None:
 
     try:
         cognito = request.app.state.cognito_client
-        token_set = await cognito.refresh_tokens(session.refresh_token)
+        # 5-second timeout: if Cognito is unreachable, fail fast and keep the old token
+        token_set = await asyncio.wait_for(
+            cognito.refresh_tokens(session.refresh_token),
+            timeout=5.0,
+        )
         await store.update_tokens(
             session_id,
             access_token=token_set.access_token,
-            # Cognito doesn't return a new refresh_token; keep the old one
             refresh_token=token_set.refresh_token,
         )
         logger.info("Silently refreshed Cognito tokens for session %s", session_id[:8])
+    except asyncio.TimeoutError:
+        logger.warning("Token refresh timed out for session %s — keeping old token", session_id[:8])
     except Exception as exc:
-        # Log but don't fail the request — user stays logged in with old token
         logger.warning("Token refresh failed for session %s: %s", session_id[:8], exc)
 
 

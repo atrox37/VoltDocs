@@ -77,7 +77,7 @@ def load_config() -> AppConfig:
         translation_timeout_seconds=int(os.getenv("TRANSLATION_TIMEOUT_SECONDS", "90")),
         glossary_max_terms_per_request=int(os.getenv("GLOSSARY_MAX_TERMS_PER_REQUEST", "100")),
         glossary_max_prompt_chars=int(os.getenv("GLOSSARY_MAX_PROMPT_CHARS", "12000")),
-        bedrock_model_id=os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0"),
+        bedrock_model_id=os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0"),
         bedrock_region=os.getenv("BEDROCK_REGION", "us-east-1"),
         bedrock_aws_profile=os.getenv("BEDROCK_AWS_PROFILE", ""),
         require_auth=_get_bool("REQUIRE_AUTH", False),

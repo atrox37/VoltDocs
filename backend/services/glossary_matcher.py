@@ -41,18 +41,28 @@ def load_glossary_terms(
     ]
 
 
+import re
+
+
+def _strip_inline_markers(text: str) -> str:
+    """Remove **bold**, *italic*, ~~strike~~ markers for plain-text matching."""
+    return re.sub(r"\*{1,3}|~~", "", text)
+
+
 def select_terms_for_texts(
     terms: list[dict],
     segment_texts: list[str],
     max_terms: int,
     max_prompt_chars: int,
 ) -> list[dict]:
-    combined = "\n".join(segment_texts)
+    # Build combined plain-text for matching (strip formatting markers)
+    combined_plain = _strip_inline_markers("\n".join(segment_texts)).lower()
+
     matched: list[dict] = []
     used_chars = 0
     for item in sorted(terms, key=lambda row: -len(row.get("source", ""))):
         source_term = item.get("source", "")
-        if source_term and source_term.lower() in combined.lower():
+        if source_term and source_term.lower() in combined_plain:
             next_size = used_chars + len(source_term) + len(item.get("target", ""))
             if next_size > max_prompt_chars:
                 continue

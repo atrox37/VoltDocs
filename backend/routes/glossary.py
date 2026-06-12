@@ -460,6 +460,70 @@ async def delete_term(
     return {"ok": True}
 
 
+@router.get("/api/glossary/export-csv")
+async def export_glossary_csv(
+    request: Request,
+    _: CurrentUser = Depends(get_current_user),
+):
+    """Export all glossary terms as a CSV file for backup or sharing."""
+    from fastapi.responses import StreamingResponse
+
+    rows = request.app.state.db.query_all(
+        """
+        SELECT source_lang, target_lang, source_term, target_term, context, enabled
+        FROM glossary_terms
+        ORDER BY source_term
+        """
+    )
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["source_lang", "target_lang", "source_term", "target_term", "context", "enabled"])
+    for row in rows:
+        writer.writerow([
+            row["source_lang"], row["target_lang"],
+            row["source_term"], row["target_term"],
+            row["context"] or "",
+            "1" if row["enabled"] else "0",
+        ])
+    csv_bytes = buffer.getvalue().encode("utf-8-sig")
+    return StreamingResponse(
+        iter([csv_bytes]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename*=UTF-8''glossary_terms.csv"},
+    )
+
+
+@router.get("/api/glossary/hit-counts")
+async def term_hit_counts(
+    request: Request,
+    _: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Return hit counts for all glossary terms based on actual translated segments.
+
+    Counts how many job_segments rows (source_text) contain each term.
+    This reflects real translation usage rather than the translation memory.
+    """
+    db = request.app.state.db
+    terms = db.query_all(
+        "SELECT id, source_lang, target_lang, source_term FROM glossary_terms WHERE enabled = 1"
+    )
+    counts: dict[str, int] = {}
+    for term in terms:
+        # Count distinct segments that contain this term in their source_text
+        count = db.query_value(
+            """
+            SELECT COUNT(DISTINCT js.segment_id)
+            FROM job_segments js
+            JOIN jobs j ON j.id = js.job_id
+            WHERE j.type = 'translation'
+              AND LOWER(js.source_text) LIKE LOWER(?)
+            """,
+            (f"%{term['source_term']}%",),
+        ) or 0
+        counts[term["id"]] = int(count)
+    return {"hitCounts": counts}
+
+
 @router.get("/api/glossary/audit-logs")
 async def audit_logs(request: Request, _: CurrentUser = Depends(require_min_role("manager"))) -> dict:
     rows = request.app.state.db.query_all(

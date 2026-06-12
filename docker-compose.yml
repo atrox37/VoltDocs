@@ -1,7 +1,7 @@
 services:
   api:
     build:
-      context: ./backend-py
+      context: ./backend
     environment:
       PORT: "8080"
       DATA_DIR: /app/data
@@ -15,7 +15,7 @@ services:
       TRANSLATION_TIMEOUT_SECONDS: "90"
       GLOSSARY_MAX_TERMS_PER_REQUEST: "100"
       GLOSSARY_MAX_PROMPT_CHARS: "12000"
-      BEDROCK_MODEL_ID: "${BEDROCK_MODEL_ID:-us.anthropic.claude-sonnet-4-5-20250929-v1:0}"
+      BEDROCK_MODEL_ID: "${BEDROCK_MODEL_ID:-us.anthropic.claude-haiku-4-5-20251001-v1:0}"
       BEDROCK_REGION: "${BEDROCK_REGION:-us-east-1}"
       BEDROCK_AWS_PROFILE: "${BEDROCK_AWS_PROFILE:-}"
       AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:-}"

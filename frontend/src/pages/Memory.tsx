@@ -32,13 +32,14 @@ import {
   commitGlossaryImport,
   createTerm,
   deleteTerm,
+  getTermHitCounts,
   listTerms,
   previewGlossaryImport,
   updateTerm,
   type GlossaryImportPreviewRow,
   type GlossaryTerm,
 } from "@/api/glossary";
-import { exportTmCsv } from "@/api/translation";
+
 
 const { Text, Paragraph } = Typography;
 
@@ -46,6 +47,7 @@ export default function Memory() {
   const { message } = App.useApp();
   const [terms, setTerms] = useState<GlossaryTerm[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hitCounts, setHitCounts] = useState<Record<string, number>>({});
   const [searchText, setSearchText] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [editingTerm, setEditingTerm] = useState<GlossaryTerm | null>(null);
@@ -66,6 +68,10 @@ export default function Memory() {
       const query = (q ?? searchText).trim();
       const { terms: data } = await listTerms(query ? { q: query } : undefined);
       setTerms(data);
+      // Load hit counts in background (non-blocking)
+      getTermHitCounts()
+        .then(({ hitCounts: counts }) => setHitCounts(counts))
+        .catch(() => {/* ignore */});
     } catch (err: unknown) {
       message.error(err instanceof Error ? err.message : "术语库加载失败");
     } finally {
@@ -174,21 +180,38 @@ export default function Memory() {
       title: "中文术语",
       dataIndex: "sourceTerm",
       key: "sourceTerm",
-      width: "35%",
+      width: "32%",
       render: (text: string) => <Text strong>{text}</Text>,
     },
     {
       title: "英文术语",
       dataIndex: "targetTerm",
       key: "targetTerm",
-      width: "35%",
+      width: "32%",
+    },
+    {
+      title: "命中次数",
+      key: "hitCount",
+      width: 100,
+      align: "center" as const,
+      sorter: (a: GlossaryTerm, b: GlossaryTerm) => (hitCounts[a.id] ?? 0) - (hitCounts[b.id] ?? 0),
+      render: (_: unknown, record: GlossaryTerm) => {
+        const count = hitCounts[record.id] ?? 0;
+        return (
+          <Text
+            style={{ fontFamily: "monospace", color: count > 0 ? "#1b3a6b" : "#ccc" }}
+          >
+            {count > 0 ? count : "—"}
+          </Text>
+        );
+      },
     },
     {
       title: "是否可用",
       dataIndex: "enabled",
       key: "enabled",
-      width: 110,
-      align: "center",
+      width: 90,
+      align: "center" as const,
       render: (enabled: boolean, record: GlossaryTerm) => (
         <Switch
           size="small"
@@ -201,7 +224,7 @@ export default function Memory() {
     {
       title: "操作",
       key: "action",
-      width: 100,
+      width: 90,
       render: (_value, record) => (
         <Space size="small">
           <Button
@@ -304,8 +327,11 @@ export default function Memory() {
                 批量导入
               </Button>
             </Upload>
-            <Button icon={<DownloadOutlined />} onClick={exportTmCsv}>
-              导出 CSV
+            <Button
+              icon={<DownloadOutlined />}
+              onClick={() => window.open("/api/glossary/export-csv", "_blank")}
+            >
+              导出
             </Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setShowAdd(true)}>
               新增术语

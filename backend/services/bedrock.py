@@ -58,24 +58,25 @@ def _build_system_prompt(
 
     glossary_lines = [
         f"- {item['source']} → {item['target']}"
-        + (f" ({item['context']})" if item.get("context") else "")
+        + (f"  [context: {item['context']}]" if item.get("context") else "")
         for item in glossary
     ]
-    glossary_section = (
-        "\nReference terminology (use ONLY when these exact terms appear in the source segment):\n"
-        + "\n".join(glossary_lines)
-        if glossary_lines
-        else ""
-    )
+    glossary_section = ""
+    if glossary_lines:
+        glossary_section = (
+            "\n\nMANDATORY TERMINOLOGY — you MUST use these exact translations whenever the source term appears. "
+            "Do NOT paraphrase, substitute, or omit them:\n"
+            + "\n".join(glossary_lines)
+        )
 
     return (
         f"You are a professional translator. Translate the provided {direction}.\n\n"
-        "The source text is extracted from a Word (.docx) document or spreadsheet. "
+        "The source text is extracted from a Word (.docx) document, spreadsheet, or Markdown file. "
         "Inline formatting is encoded with markers:\n"
-        "- **double asterisks** = bold text\n"
-        "- *single asterisks* = italic text\n"
-        "- ~~double tildes~~ = strikethrough text\n"
-        "These markers must be preserved in translation.\n\n"
+        "- **double asterisks** = bold text → preserve as **text**\n"
+        "- *single asterisks* = italic text → preserve as *text*\n"
+        "- ~~double tildes~~ = strikethrough text → preserve as ~~text~~\n"
+        "- A single ~ (tilde) is NOT a formatting marker — treat the entire segment as plain text and translate it.\n\n"
         "MANDATORY RULES — follow without exception:\n"
         "1. Translate EVERY segment exactly as given. Never refuse, question, or ask for more context.\n"
         "2. Output ONLY the translated text. No explanations, no notes, no meta-commentary.\n"
@@ -83,7 +84,7 @@ def _build_system_prompt(
         "4. Short segments (single words, labels, headings, symbols, numbers) — translate literally.\n"
         "5. Preserve all numbers, units, model codes, and part codes exactly as written.\n"
         "6. Preserve warning labels (注意/NOTE, 警告/WARNING, 危险/DANGER) in ALL CAPS.\n"
-        "7. If unsure about a term, make a reasonable translation rather than refusing.\n"
+        "7. If the segment contains a single ~ before/after text (not ~~), translate the text content normally — do NOT omit it.\n"
         "8. Do NOT assume a specific industry or domain."
         + glossary_section
     )
@@ -113,6 +114,9 @@ def _call_bedrock_sync(
     body = json.dumps({
         "anthropic_version": "bedrock-2023-05-31",
         "max_tokens": 16384,
+        # Low temperature = more deterministic, better instruction-following for translation.
+        # 0.1 gives stable terminology adherence while keeping natural phrasing.
+        "temperature": 0.5,
         "system": system_prompt,
         "messages": [{"role": "user", "content": user_message}],
     })
