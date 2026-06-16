@@ -26,7 +26,6 @@ import {
   InboxOutlined,
   LoadingOutlined,
   SwapOutlined,
-  WarningOutlined,
 } from "@ant-design/icons";
 import type { RcFile, UploadFile } from "antd/es/upload";
 import type { ColumnsType } from "antd/es/table";
@@ -46,6 +45,7 @@ const { TextArea } = Input;
 
 type FileStatus = "pending" | "uploading" | "translating" | "done" | "failed";
 type SegmentReview = Record<string, string>;
+type ConfirmedReview = Record<string, boolean>;
 
 interface FileEntry {
   uid: string;
@@ -59,6 +59,7 @@ interface FileEntry {
   outputFileName?: string;
   reviewing: boolean;
   edits: SegmentReview;
+  confirmed: ConfirmedReview;
   segments: TranslationSegment[];
   segmentsLoaded: boolean;
 }
@@ -68,28 +69,47 @@ interface FileEntry {
 function ReviewModal({
   entry,
   onEditsChange,
+  onConfirmedChange,
   onExported,
+  onExportStale,
   onClose,
-  onSkip,
 }: {
   entry: FileEntry;
   onEditsChange: (edits: SegmentReview) => void;
+  onConfirmedChange: (confirmed: ConfirmedReview) => void;
   onExported: (fileId: string, fileName: string) => void;
+  onExportStale: () => void;
   onClose: () => void;
-  onSkip: () => void; // skip review: export with current state and mark done
 }) {
   const { message } = App.useApp();
   const [exporting, setExporting] = useState(false);
 
   const issueSegments = entry.segments.filter((s) => !s.qaPass);
-  const resolvedCount = issueSegments.filter((s) => s.id in entry.edits).length;
-  const allResolved = issueSegments.length === 0 || resolvedCount === issueSegments.length;
+  const confirmedCount = issueSegments.filter((s) => entry.confirmed[s.id]).length;
+  const allConfirmed = issueSegments.length === 0 || confirmedCount === issueSegments.length;
 
-  const acceptSegment = (s: TranslationSegment) =>
-    onEditsChange({ ...entry.edits, [s.id]: s.draftTranslation });
+  const currentTranslation = (s: TranslationSegment) =>
+    entry.edits[s.id] ?? s.draftTranslation;
+
+  const confirmSegment = (s: TranslationSegment) => {
+    const translation = currentTranslation(s);
+    onEditsChange({ ...entry.edits, [s.id]: translation });
+    onConfirmedChange({ ...entry.confirmed, [s.id]: true });
+  };
+
+  const confirmAll = () => {
+    const newEdits = { ...entry.edits };
+    const newConfirmed = { ...entry.confirmed };
+    for (const s of issueSegments) {
+      newEdits[s.id] = currentTranslation(s);
+      newConfirmed[s.id] = true;
+    }
+    onEditsChange(newEdits);
+    onConfirmedChange(newConfirmed);
+  };
 
   const doExport = async (): Promise<boolean> => {
-    if (!entry.jobId || exporting) return false;
+    if (!entry.jobId || exporting || !allConfirmed) return false;
     setExporting(true);
     try {
       const exportSegs = entry.segments.map((s) => ({
@@ -98,6 +118,7 @@ function ReviewModal({
       }));
       const result = await exportTranslation(entry.jobId, exportSegs);
       onExported(result.fileId, result.fileName);
+      message.success("译文已保存，可在文件列表下载");
       return true;
     } catch (err: unknown) {
       message.error(err instanceof Error ? err.message : "导出失败");
@@ -107,31 +128,24 @@ function ReviewModal({
     }
   };
 
-  // Auto-export when all issues resolved, then close
-  const handleAllResolvedClose = async () => {
+  const handleConfirm = async () => {
+    if (!allConfirmed) return;
+    if (issueSegments.length === 0) {
+      onClose();
+      return;
+    }
     const ok = await doExport();
     if (ok) onClose();
   };
 
-  // Skip: export whatever current state is, mark done, close
-  const handleSkip = async () => {
-    const ok = await doExport();
-    if (ok) {
-      onSkip();
-      onClose();
+  const handleDismiss = () => {
+    if (allConfirmed && issueSegments.length > 0) {
+      void handleConfirm();
+      return;
     }
+    onClose();
   };
 
-  // Watch for all-resolved transition and auto-trigger export
-  const prevAllResolved = React.useRef(false);
-  React.useEffect(() => {
-    if (allResolved && !prevAllResolved.current && issueSegments.length > 0 && entry.reviewing) {
-      void handleAllResolvedClose();
-    }
-    prevAllResolved.current = allResolved;
-  }, [allResolved]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Only show QA-failed segments
   const reviewColumns: ColumnsType<TranslationSegment> = [
     {
       title: "#",
@@ -148,50 +162,58 @@ function ReviewModal({
       key: "qa",
       width: 200,
       render: (_: unknown, s: TranslationSegment) => {
-        if (s.id in entry.edits)
-          return <Tag color="green" icon={<CheckOutlined />} style={{ fontSize: 11 }}>已处理</Tag>;
+        if (entry.confirmed[s.id])
+          return <Tag color="green" icon={<CheckOutlined />} style={{ fontSize: 11 }}>已确认</Tag>;
         return (
-          <Tooltip title={s.qaReason || "QA 未通过"}>
-            <Text type="warning" style={{ fontSize: 12 }}>{s.qaReason || "QA 未通过"}</Text>
-          </Tooltip>
+          <Text type="warning" style={{ fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+            {s.qaReason || "QA 未通过"}
+          </Text>
         );
       },
     },
     {
       title: "原文",
       dataIndex: "sourceText",
-      width: "28%",
-      render: (v: string) => <Text style={{ fontSize: 13, lineHeight: "1.6" }}>{v}</Text>,
+      render: (v: string) => (
+        <Text style={{ fontSize: 13, lineHeight: "1.6", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{v}</Text>
+      ),
     },
     {
       title: "译文（可直接修改）",
       key: "translation",
       render: (_: unknown, s: TranslationSegment) => (
         <TextArea
-          value={entry.edits[s.id] ?? s.draftTranslation}
-          onChange={(e) => onEditsChange({ ...entry.edits, [s.id]: e.target.value })}
-          autoSize={{ minRows: 1, maxRows: 5 }}
+          value={currentTranslation(s)}
+          onChange={(e) => {
+            onEditsChange({ ...entry.edits, [s.id]: e.target.value });
+            onExportStale();
+            if (entry.confirmed[s.id]) {
+              onConfirmedChange({ ...entry.confirmed, [s.id]: false });
+            }
+          }}
+          autoSize={{ minRows: 1, maxRows: 8 }}
           style={{
             fontSize: 13,
-            borderColor: s.id in entry.edits ? "#52c41a" : "#faad14",
+            borderColor: entry.confirmed[s.id] ? "#52c41a" : "#faad14",
           }}
         />
       ),
     },
     {
-      title: "",
+      title: "操作",
       key: "accept",
-      width: 72,
-      render: (_: unknown, s: TranslationSegment) => {
-        if (s.id in entry.edits) return null;
-        return (
-          <Tooltip title="保留当前译文，标记为已处理">
-            <Button size="small" icon={<CheckOutlined />} onClick={() => acceptSegment(s)}>
-              确认
-            </Button>
-          </Tooltip>
-        );
-      },
+      width: 88,
+      align: "center",
+      render: (_: unknown, s: TranslationSegment) => (
+        <Button
+          size="small"
+          type={entry.confirmed[s.id] ? "default" : "primary"}
+          icon={<CheckOutlined />}
+          onClick={() => confirmSegment(s)}
+        >
+          确认
+        </Button>
+      ),
     },
   ];
 
@@ -202,61 +224,66 @@ function ReviewModal({
         <Space>
           <Text strong>{entry.file.name}</Text>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            {issueSegments.length} 个 QA 问题 · 已处理 {resolvedCount}/{issueSegments.length}
+            {issueSegments.length} 个 QA 问题 · 已确认 {confirmedCount}/{issueSegments.length}
           </Text>
-          {allResolved && (
-            <Tag color="success" icon={<CheckCircleOutlined />} style={{ fontSize: 11 }}>审校完成</Tag>
+          {allConfirmed && issueSegments.length > 0 && (
+            <Tag color="success" icon={<CheckCircleOutlined />} style={{ fontSize: 11 }}>可确定</Tag>
           )}
         </Space>
       }
-      width="85vw"
+      width="min(1100px, 92vw)"
       style={{ top: 20 }}
-      onCancel={onClose}
+      onCancel={handleDismiss}
       footer={
         <Space>
-          {!allResolved && (
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              还有 {issueSegments.length - resolvedCount} 个问题待处理
-            </Text>
-          )}
-          {/* Skip: export current state as-is and mark done */}
-          <Button loading={exporting} onClick={handleSkip}>
-            跳过审校
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {allConfirmed
+              ? "全部问题已确认，点击确定保存译文"
+              : `还有 ${issueSegments.length - confirmedCount} 项未确认`}
+          </Text>
+          <Button
+            type="primary"
+            loading={exporting}
+            disabled={!allConfirmed}
+            icon={<CheckOutlined />}
+            onClick={() => void handleConfirm()}
+          >
+            确定
           </Button>
         </Space>
       }
     >
-      {allResolved ? (
-        <Alert
-          type="success"
-          message="所有 QA 问题已处理完毕，正在自动导出…"
-          showIcon
-          style={{ marginBottom: 12 }}
-        />
-      ) : (
-        <Alert
-          type="warning"
-          message={`还有 ${issueSegments.length - resolvedCount} 个问题未处理。修改译文或点「确认」保留，所有问题处理完后自动导出。如需立即结束，点「跳过审校」。`}
-          showIcon
-          style={{ marginBottom: 12 }}
-        />
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 12 }}
+        message="请逐条修改译文并点击「确认」，或点击「全部确认」。全部确认后点击「确定」保存；下载请在文件列表操作。可重新审校并再次确认以更新译文。"
+      />
+      {issueSegments.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <Button icon={<CheckOutlined />} onClick={confirmAll}>
+            全部确认
+          </Button>
+        </div>
       )}
       <Table
+        className="review-modal-table"
         columns={reviewColumns}
         dataSource={issueSegments}
         rowKey="id"
         size="small"
         pagination={{ pageSize: 30, showSizeChanger: true, pageSizeOptions: ["20", "30", "50"] }}
-        sticky
         rowClassName={(s: TranslationSegment) =>
-          s.id in entry.edits ? "qa-fixed-row" : "qa-fail-row"
+          entry.confirmed[s.id] ? "qa-fixed-row" : "qa-fail-row"
         }
-        scroll={{ y: "calc(80vh - 280px)" }}
+        scroll={{ y: "calc(80vh - 320px)" }}
         locale={{ emptyText: "无 QA 问题" }}
       />
       <style>{`
         .qa-fail-row td { background: #fffbe6 !important; }
         .qa-fixed-row td { background: #f6ffed !important; }
+        .ant-table-wrapper { overflow-x: hidden; }
+        .review-modal-table .ant-table-cell { white-space: normal !important; word-break: break-word; vertical-align: top; }
       `}</style>
     </Modal>
   );
@@ -286,7 +313,7 @@ export default function Translate() {
     const uid = f.uid;
     setEntries((prev) => [
       ...prev,
-      { uid, file: f, status: "pending", progress: 0, reviewing: false, edits: {}, segments: [], segmentsLoaded: false },
+      { uid, file: f, status: "pending", progress: 0, reviewing: false, edits: {}, confirmed: {}, segments: [], segmentsLoaded: false },
     ]);
     setFileList((prev) => [...prev, { uid, name: f.name, status: "done" }]);
     return false;
@@ -421,22 +448,24 @@ export default function Translate() {
           );
         }
         if (e.status !== "done") return null;
-        // If QA all passed (no review needed), only show download
         const qaAllPass = e.job?.result?.allQaPass;
+        const needsReview = !qaAllPass;
+        const canDownload = Boolean(e.outputFileId);
         return (
           <Space size={8}>
-            {!qaAllPass && (
+            {needsReview && (
               <Button size="small" icon={<EditOutlined />} onClick={() => void openReview(e.uid)}>
                 {e.outputFileId ? "重新审校" : "审校"}
               </Button>
             )}
-            {e.outputFileId && (
+            {canDownload && (
               <Button type="primary" size="small" icon={<DownloadOutlined />} onClick={() => downloadFile(e)}>
                 下载
               </Button>
             )}
           </Space>
-        );      },
+        );
+      },
     },
   ];
 
@@ -542,8 +571,9 @@ export default function Translate() {
             key={e.uid}
             entry={e}
             onEditsChange={(edits) => updateEntry(e.uid, { edits })}
+            onConfirmedChange={(confirmed) => updateEntry(e.uid, { confirmed })}
             onExported={(fileId, fileName) => updateEntry(e.uid, { outputFileId: fileId, outputFileName: fileName })}
-            onSkip={() => updateEntry(e.uid, { outputFileId: e.outputFileId || "skipped", outputFileName: e.outputFileName || e.file.name })}
+            onExportStale={() => updateEntry(e.uid, { outputFileId: undefined, outputFileName: undefined })}
             onClose={() => updateEntry(e.uid, { reviewing: false })}
           />
         ))}

@@ -1,6 +1,13 @@
+"""Glossary matching and post-translation terminology enforcement."""
 from __future__ import annotations
 
+import re
+
 from database import Database
+
+
+def _strip_inline_markers(text: str) -> str:
+    return re.sub(r"\*{1,3}|~~", "", text)
 
 
 def load_glossary_terms(
@@ -41,21 +48,12 @@ def load_glossary_terms(
     ]
 
 
-import re
-
-
-def _strip_inline_markers(text: str) -> str:
-    """Remove **bold**, *italic*, ~~strike~~ markers for plain-text matching."""
-    return re.sub(r"\*{1,3}|~~", "", text)
-
-
 def select_terms_for_texts(
     terms: list[dict],
     segment_texts: list[str],
     max_terms: int,
     max_prompt_chars: int,
 ) -> list[dict]:
-    # Build combined plain-text for matching (strip formatting markers)
     combined_plain = _strip_inline_markers("\n".join(segment_texts)).lower()
 
     matched: list[dict] = []
@@ -76,6 +74,72 @@ def select_terms_for_texts(
             if len(matched) >= max_terms:
                 break
     return matched
+
+
+def terms_for_source(
+    terms: list[dict],
+    source_text: str,
+    source_lang: str,
+    target_lang: str,
+) -> list[dict]:
+    """Return glossary entries that appear in a single segment."""
+    if not terms:
+        return []
+    is_zh_to_en = source_lang.startswith("zh") and target_lang.startswith("en")
+    plain = _strip_inline_markers(source_text)
+    plain_lower = plain.lower()
+    matched: list[dict] = []
+    for item in terms:
+        src = item.get("source", "")
+        tgt = item.get("target", "")
+        if not src or not tgt:
+            continue
+        if not is_zh_to_en:
+            src, tgt = tgt, src
+        if src in plain or src.lower() in plain_lower:
+            matched.append({"source": src, "target": tgt})
+    return matched
+
+
+def apply_glossary_postprocess(
+    source: str,
+    translation: str,
+    terms: list[dict],
+    source_lang: str,
+    target_lang: str,
+) -> str:
+    """Fix common model paraphrasing when glossary mandates an exact target phrase."""
+    if not translation.strip() or not terms:
+        return translation
+
+    is_zh_to_en = source_lang.startswith("zh") and target_lang.startswith("en")
+    plain_src = _strip_inline_markers(source)
+    result = translation
+    plain_result = _strip_inline_markers(result).lower()
+
+    for item in sorted(terms, key=lambda row: -len(row.get("source", ""))):
+        src = item.get("source", "")
+        tgt = item.get("target", "")
+        if not src or not tgt:
+            continue
+        if not is_zh_to_en:
+            src, tgt = tgt, src
+        if src not in plain_src and src.lower() not in plain_src.lower():
+            continue
+        if tgt.lower() in plain_result:
+            continue
+
+        # Replace wrong phrase that shares a multi-word tail with the mandatory target.
+        parts = tgt.split()
+        if len(parts) >= 2:
+            tail = " ".join(parts[1:])
+            pattern = re.compile(rf"\b[\w][\w-]*(?:\s+[\w][\w-]*)*\s+{re.escape(tail)}\b", re.IGNORECASE)
+            new_result, count = pattern.subn(tgt, result, count=1)
+            if count:
+                result = new_result
+                plain_result = _strip_inline_markers(result).lower()
+
+    return result
 
 
 def match_glossary_terms(

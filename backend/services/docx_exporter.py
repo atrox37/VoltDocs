@@ -7,7 +7,11 @@ import zipfile
 
 from lxml import etree
 
-from services.docx_parser import NSMAP, W_NS, iter_docx_story_parts, _RECOVER_PARSER
+from services.docx.fields import replace_field_title_text
+from services.docx.markup import normalize_marker_spacing, preserve_circled_prefix
+from services.docx_parser import NSMAP, W_NS, _RECOVER_PARSER, iter_docx_story_parts
+from services.qa_repair_ai import sanitize_repair_text
+from services.docx.markup import clean_translation_artifacts
 
 
 @dataclass
@@ -129,7 +133,53 @@ def _make_run(text: str, template: RunTemplate, bold: bool, italic: bool, strike
     return run
 
 
+def _paragraph_has_drawing(paragraph: etree._Element) -> bool:
+    return bool(paragraph.xpath(".//w:drawing", namespaces=NSMAP))
+
+
+def _is_pure_text_run(run: etree._Element) -> bool:
+    if run.tag != f"{{{W_NS}}}r":
+        return False
+    if run.xpath(".//w:drawing", namespaces=NSMAP):
+        return False
+    return bool(run.xpath("./w:t", namespaces=NSMAP))
+
+
+def _replace_pure_text_runs(paragraph: etree._Element, translation: str) -> None:
+    """Replace only direct child text runs; preserve drawing/anchor runs intact."""
+    translation = normalize_marker_spacing(translation)
+    parts = _parse_inline_format_markers(translation) or [(translation, False, False, False)]
+    part_index = 0
+    templates = _capture_run_templates(paragraph)
+
+    for child in list(paragraph):
+        if child.tag != f"{{{W_NS}}}r" or not _is_pure_text_run(child):
+            continue
+        if part_index >= len(parts):
+            parent = child.getparent()
+            if parent is not None:
+                parent.remove(child)
+            continue
+        text, bold, italic, strike = parts[part_index]
+        part_index += 1
+        if not text:
+            continue
+        template = templates[min(part_index - 1, len(templates) - 1)]
+        new_run = _make_run(text, template, bold, italic, strike)
+        paragraph.replace(child, new_run)
+
+    if part_index == 0 and parts:
+        template = templates[0]
+        for text, bold, italic, strike in parts:
+            if text:
+                paragraph.append(_make_run(text, template, bold, italic, strike))
+
+
 def _replace_paragraph_runs(paragraph: etree._Element, translation: str) -> None:
+    translation = normalize_marker_spacing(translation)
+    if _paragraph_has_drawing(paragraph):
+        _replace_pure_text_runs(paragraph, translation)
+        return
     templates = _capture_run_templates(paragraph)
     parts = _parse_inline_format_markers(translation) or [(translation, False, False, False)]
     new_children: list[etree._Element] = []
@@ -169,15 +219,34 @@ def _replace_paragraph_runs(paragraph: etree._Element, translation: str) -> None
         paragraph.append(child)
 
 
-def export_docx(original_bytes: bytes, parsed_segments: list[dict], request_segments: list[dict]) -> bytes:
-    replacements: dict[tuple[str, int], str] = {}
+def _replace_field_display_text(paragraph: etree._Element, translation: str) -> None:
+    replace_field_title_text(paragraph, normalize_marker_spacing(translation))
+
+
+def export_docx(
+    original_bytes: bytes,
+    parsed_segments: list[dict],
+    request_segments: list[dict],
+    target_lang: str = "",
+) -> bytes:
+    replacements: dict[tuple[str, int], tuple[str, bool]] = {}
     for parsed, request in zip(parsed_segments, request_segments):
-        translation = (request.get("translation") or request.get("draftTranslation") or request.get("draft_translation") or "").strip()
+        source = (parsed.get("source_text") or parsed.get("plain_text") or "").strip()
+        raw = (
+            request.get("translation")
+            or request.get("draftTranslation")
+            or request.get("draft_translation")
+            or ""
+        ).strip()
+        translation = clean_translation_artifacts(
+            sanitize_repair_text(preserve_circled_prefix(source, raw)),
+            target_lang=target_lang,
+        )
         if not translation:
             continue
         location = parsed.get("_docx_location") or {}
         key = (location.get("part_name"), location.get("paragraph_index"))
-        replacements[key] = translation
+        replacements[key] = (translation, bool(location.get("field_display")))
 
     input_buffer = BytesIO(original_bytes)
     output_buffer = BytesIO()
@@ -208,8 +277,13 @@ def export_docx(original_bytes: bytes, parsed_segments: list[dict], request_segm
                         continue
                 paragraphs = root.xpath(".//w:p", namespaces=NSMAP)
                 for index, paragraph in enumerate(paragraphs):
-                    translation = replacements.get((entry.filename, index))
-                    if translation:
+                    item = replacements.get((entry.filename, index))
+                    if not item:
+                        continue
+                    translation, field_display = item
+                    if field_display:
+                        _replace_field_display_text(paragraph, translation)
+                    else:
                         _replace_paragraph_runs(paragraph, translation)
                 raw = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone="yes")
                 target_archive.writestr(entry, raw, compress_type=zipfile.ZIP_DEFLATED)

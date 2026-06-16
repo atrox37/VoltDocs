@@ -6,7 +6,12 @@ import zipfile
 
 from lxml import etree
 
-
+from services.docx.fields import (
+    extract_field_title_text,
+    is_field_display_paragraph,
+    is_skippable_field_paragraph,
+)
+from services.docx.markup import normalize_adjacent_bold_markers
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 NSMAP = {"w": W_NS}
 XML_NAMESPACES = {"w": W_NS}
@@ -87,7 +92,9 @@ def _extract_paragraph_text(paragraph: etree._Element) -> tuple[str, str]:
         if is_strike:
             marked = f"~~{marked}~~"
         marked_parts.append(marked)
-    return "".join(plain_parts).strip(), "".join(marked_parts).strip()
+    plain = "".join(plain_parts).strip()
+    marked = normalize_adjacent_bold_markers("".join(marked_parts).strip())
+    return plain, marked
 
 
 def _classify_segment_type(style_name: str | None, order: int, plain_text: str) -> str:
@@ -111,6 +118,57 @@ def _parse_xml_bytes(xml_bytes: bytes) -> etree._Element | None:
             return None
 
 
+def _paragraph_has_drawing(paragraph: etree._Element) -> bool:
+    return bool(paragraph.xpath(".//w:drawing", namespaces=NSMAP))
+
+
+def _is_field_display_paragraph(paragraph: etree._Element) -> bool:
+    return is_field_display_paragraph(paragraph)
+
+
+def _extract_field_display_text(paragraph: etree._Element) -> tuple[str, str]:
+    return extract_field_title_text(paragraph)
+
+
+def _is_field_paragraph(paragraph: etree._Element) -> bool:
+    return is_skippable_field_paragraph(paragraph)
+
+
+def _paragraph_should_skip_segment(paragraph: etree._Element, plain_text: str) -> bool:
+    """Skip anchor paragraphs where drawings carry diagram labels."""
+    if not _paragraph_has_drawing(paragraph):
+        return False
+    return len(plain_text.strip()) <= 12
+
+
+def _append_segment(
+    segments: list[dict],
+    *,
+    part_name: str,
+    paragraph_index: int,
+    source_text: str,
+    plain_text: str,
+    style_name: str | None,
+    field_display: bool = False,
+) -> None:
+    segment_order = len(segments)
+    segments.append(
+        {
+            "id": f"seg-{segment_order + 1}",
+            "order": segment_order,
+            "source_text": source_text,
+            "plain_text": plain_text,
+            "style_name": style_name,
+            "segment_type": _classify_segment_type(style_name, segment_order, plain_text),
+            "_docx_location": {
+                "part_name": part_name,
+                "paragraph_index": paragraph_index,
+                "field_display": field_display,
+            },
+        }
+    )
+
+
 def extract_segments(content: bytes) -> list[dict]:
     segments: list[dict] = []
     for part_name, xml_bytes in iter_docx_story_parts(content):
@@ -119,26 +177,40 @@ def extract_segments(content: bytes) -> list[dict]:
             continue
         paragraphs = _iter_paragraphs(root)
         for paragraph_index, paragraph in enumerate(paragraphs):
+            if _is_field_paragraph(paragraph):
+                continue
+
             style_name = _extract_style_name(paragraph)
+
+            if _is_field_display_paragraph(paragraph):
+                plain_text, source_text = _extract_field_display_text(paragraph)
+                if not plain_text:
+                    continue
+                _append_segment(
+                    segments,
+                    part_name=part_name,
+                    paragraph_index=paragraph_index,
+                    source_text=source_text,
+                    plain_text=plain_text,
+                    style_name=style_name,
+                    field_display=True,
+                )
+                continue
+
             plain_text, source_text = _extract_paragraph_text(paragraph)
             if not plain_text or is_code_style(style_name):
+                continue
+            if _paragraph_should_skip_segment(paragraph, plain_text):
                 continue
             if NON_TRANSLATABLE_PATTERN.fullmatch(plain_text):
                 continue
 
-            segment_order = len(segments)
-            segments.append(
-                {
-                    "id": f"seg-{segment_order + 1}",
-                    "order": segment_order,
-                    "source_text": source_text,
-                    "plain_text": plain_text,
-                    "style_name": style_name,
-                    "segment_type": _classify_segment_type(style_name, segment_order, plain_text),
-                    "_docx_location": {
-                        "part_name": part_name,
-                        "paragraph_index": paragraph_index,
-                    },
-                }
+            _append_segment(
+                segments,
+                part_name=part_name,
+                paragraph_index=paragraph_index,
+                source_text=source_text,
+                plain_text=plain_text,
+                style_name=style_name,
             )
     return segments

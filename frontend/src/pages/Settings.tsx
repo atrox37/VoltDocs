@@ -24,7 +24,7 @@ export default function Settings() {
             <div>
               <Text strong>翻译批次策略</Text>
               <Paragraph type="secondary" style={{ marginBottom: 0, marginTop: 4, fontSize: 13 }}>
-                系统按 5000 字节或 120 段为上限自动分批，单段超限时单独提交。可通过环境变量
+                系统按 5000 字节或 40 段为上限自动分批，单段超限时单独提交。可通过环境变量
                 <Text code>TRANSLATION_BATCH_MAX_BYTES</Text> / <Text code>TRANSLATION_BATCH_MAX_SEGMENTS</Text> 调整。
               </Paragraph>
             </div>

@@ -32,6 +32,13 @@ class AppConfig:
     bedrock_model_id: str
     bedrock_region: str
     bedrock_aws_profile: str
+    qa_ai_enabled: bool
+    qa_ai_model_id: str
+    qa_ai_uncertain_threshold: float
+    qa_ai_batch_max_segments: int
+    qa_repair_enabled: bool
+    qa_repair_max_attempts: int
+    qa_repair_batch_max_segments: int
     require_auth: bool
     dev_user_email: str
     initial_admin_email: str
@@ -73,13 +80,22 @@ def load_config() -> AppConfig:
         max_upload_mb=int(os.getenv("MAX_UPLOAD_MB", "50")),
         translation_lambda_url=os.getenv("TRANSLATION_LAMBDA_URL", ""),
         translation_batch_max_bytes=int(os.getenv("TRANSLATION_BATCH_MAX_BYTES", "5000")),
-        translation_batch_max_segments=int(os.getenv("TRANSLATION_BATCH_MAX_SEGMENTS", "120")),
+        translation_batch_max_segments=int(os.getenv("TRANSLATION_BATCH_MAX_SEGMENTS", "40")),
         translation_timeout_seconds=int(os.getenv("TRANSLATION_TIMEOUT_SECONDS", "90")),
         glossary_max_terms_per_request=int(os.getenv("GLOSSARY_MAX_TERMS_PER_REQUEST", "100")),
         glossary_max_prompt_chars=int(os.getenv("GLOSSARY_MAX_PROMPT_CHARS", "12000")),
-        bedrock_model_id=os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0"),
+        bedrock_model_id=os.getenv("BEDROCK_MODEL_ID", "us.amazon.nova-lite-v1:0"),
         bedrock_region=os.getenv("BEDROCK_REGION", "us-east-1"),
         bedrock_aws_profile=os.getenv("BEDROCK_AWS_PROFILE", ""),
+        qa_ai_enabled=_get_bool("QA_AI_ENABLED", True),
+        qa_ai_model_id=os.getenv("QA_AI_MODEL_ID", "") or os.getenv(
+            "QA_BEDROCK_MODEL_ID", "us.amazon.nova-micro-v1:0"
+        ),
+        qa_ai_uncertain_threshold=float(os.getenv("QA_AI_UNCERTAIN_THRESHOLD", "0.75")),
+        qa_ai_batch_max_segments=int(os.getenv("QA_AI_BATCH_MAX_SEGMENTS", "40")),
+        qa_repair_enabled=_get_bool("QA_REPAIR_ENABLED", True),
+        qa_repair_max_attempts=int(os.getenv("QA_REPAIR_MAX_ATTEMPTS", "1")),
+        qa_repair_batch_max_segments=int(os.getenv("QA_REPAIR_BATCH_MAX_SEGMENTS", "40")),
         require_auth=_get_bool("REQUIRE_AUTH", False),
         dev_user_email=os.getenv("DEV_USER_EMAIL", "dev@voltdocs.local"),
         initial_admin_email=os.getenv("INITIAL_ADMIN_EMAIL", "").strip(),

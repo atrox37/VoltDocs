@@ -14,10 +14,30 @@ import re
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+_MONTH_EQUIVALENTS = {
+    "1": ("january", "jan"),
+    "2": ("february", "feb"),
+    "3": ("march", "mar"),
+    "4": ("april", "apr"),
+    "5": ("may",),
+    "6": ("june", "jun"),
+    "7": ("july", "jul"),
+    "8": ("august", "aug"),
+    "9": ("september", "sept", "sep"),
+    "10": ("october", "oct"),
+    "11": ("november", "nov"),
+    "12": ("december", "dec"),
+}
+
 def _extract_numbers(text: str) -> list[str]:
-    """Return all distinct numbers that are meaningful (≥2 digits, or decimal)."""
-    found = re.findall(r"\d+(?:\.\d+)?", text)
-    return sorted({n for n in found if len(n) >= 2 or "." in n})
+    """Return normalized numbers (commas stripped) that are meaningful (≥2 digits, or decimal)."""
+    found = re.findall(r"\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?", text)
+    normalized: list[str] = []
+    for raw in found:
+        clean = raw.replace(",", "")
+        if len(clean) >= 2 or "." in clean:
+            normalized.append(clean)
+    return sorted(set(normalized))
 
 
 def _count_cjk(text: str) -> int:
@@ -26,6 +46,57 @@ def _count_cjk(text: str) -> int:
 
 def _count_latin(text: str) -> int:
     return sum(1 for ch in text if ch.isascii() and ch.isalpha())
+
+
+def _strip_inline_markers(text: str) -> str:
+    return re.sub(r"\*{1,3}|~~", "", text)
+
+
+def _source_has_month_expression(source: str, number: str) -> bool:
+    """True when the source uses this number as a month (11月, 11 月, 11月份, etc.)."""
+    for candidate in (source, _strip_inline_markers(source)):
+        if re.search(rf"(?<!\d){re.escape(number)}\s*月", candidate):
+            return True
+    return False
+
+
+def _translation_has_month_name(translation: str, month_names: tuple[str, ...]) -> bool:
+    translation_lower = translation.lower()
+    for month_name in month_names:
+        # Allow optional trailing period for abbreviations like Nov.
+        pattern = rf"\b{re.escape(month_name)}\.?\b"
+        if re.search(pattern, translation_lower):
+            return True
+    return False
+
+
+def _is_month_number_equivalent(source: str, translation: str, number: str) -> bool:
+    """Allow month name conversions like `11月` → `November`.
+
+    We only relax the numeric check when the source explicitly uses a month
+    expression. Standalone numbers like model IDs must still be preserved.
+    """
+    normalized = str(int(number))
+    month_names = _MONTH_EQUIVALENTS.get(normalized)
+    if not month_names:
+        return False
+
+    if not _source_has_month_expression(source, number):
+        return False
+
+    return _translation_has_month_name(translation, month_names)
+
+
+def _translation_contains_number(translation: str, number: str) -> bool:
+    if number in translation:
+        return True
+    return number in translation.replace(",", "")
+
+
+def _has_numeric_equivalent(source: str, translation: str, number: str) -> bool:
+    if _translation_contains_number(translation, number):
+        return True
+    return _is_month_number_equivalent(source, translation, number)
 
 
 # ── Rule 1: Empty translation ─────────────────────────────────────────────────
@@ -41,7 +112,7 @@ def check_empty(source: str, translation: str, **_) -> str | None:
 def check_numbers(source: str, translation: str, **_) -> str | None:
     """All significant numbers in the source must appear in the translation."""
     numbers = _extract_numbers(source)
-    missing = [n for n in numbers if n not in translation]
+    missing = [n for n in numbers if not _has_numeric_equivalent(source, translation, n)]
     if missing:
         return f"数字不一致，译文缺少: {', '.join(missing)}"
     return None
@@ -214,16 +285,110 @@ def check_punctuation(source: str, translation: str, target_lang: str = "", **_)
 
 # ── Runner ────────────────────────────────────────────────────────────────────
 
-# Rules ordered from most critical to least; first failure is reported.
-_RULES = [
+# ── Rule 9: Repair / model markup artifacts ───────────────────────────────────
+
+_ARTIFACT_TAG_RE = re.compile(
+    r"<(?:source|current_translation|corrected_translation|item|seg)\b",
+    re.IGNORECASE,
+)
+
+
+def check_markup_artifacts(source: str, translation: str, **_) -> str | None:
+    """Detect prompt/XML leakage or spurious backslash escapes in translation."""
+    if not translation.strip():
+        return None
+    if _ARTIFACT_TAG_RE.search(translation):
+        return "译文含有修复程序标记（XML 泄漏），需重新翻译"
+    if re.search(r"\\{2,}\s*$", translation):
+        return "译文含有异常反斜杠转义"
+    if re.search(r"\\[*~]", translation):
+        return "译文含有异常反斜杠转义"
+    return None
+
+
+# Hard rules: deterministic checks that must never be overridden by AI.
+_HARD_RULES = [
     check_empty,
-    check_numbers,
+    check_markup_artifacts,
     check_inline_markers,
+    check_required_terms,
+]
+
+# ── Rule 8: Segment alignment sanity ─────────────────────────────────────────
+
+def check_segment_alignment(source: str, translation: str, **_) -> str | None:
+    """Detect obvious batch mis-mapping (label ↔ paragraph swap)."""
+    from services.translation_align import is_likely_misaligned
+
+    if is_likely_misaligned(source, translation):
+        return "译文与原文结构不匹配（疑似段落错位，序号与正文互换）"
+    return None
+
+
+# Soft rules: heuristic checks — AI may adjudicate false positives.
+_SOFT_RULES = [
+    check_numbers,
     check_length_ratio,
     check_language_leakage,
-    check_required_terms,
     check_punctuation,
+    check_segment_alignment,
 ]
+
+# All rules in evaluation order (backward compatible).
+_RULES = _HARD_RULES + _SOFT_RULES
+
+_SOFT_RULE_NAMES = {rule.__name__ for rule in _SOFT_RULES}
+
+
+def is_soft_failure_rule(rule_name: str) -> bool:
+    return rule_name in _SOFT_RULE_NAMES
+
+
+def _run_rule_list(
+    rules: list,
+    source: str,
+    translation: str,
+    source_lang: str = "",
+    target_lang: str = "",
+    glossary_terms: list[dict] | None = None,
+) -> tuple[str | None, str | None]:
+    """Return (failure_reason, failing_rule_name) or (None, None) if all pass."""
+    kwargs = {
+        "source_lang": source_lang,
+        "target_lang": target_lang,
+        "glossary_terms": glossary_terms,
+    }
+    for rule in rules:
+        reason = rule(source, translation, **kwargs)
+        if reason:
+            return reason, rule.__name__
+    return None, None
+
+
+def run_hard_checks(
+    source: str,
+    translation: str,
+    source_lang: str = "",
+    target_lang: str = "",
+    glossary_terms: list[dict] | None = None,
+) -> tuple[str | None, str | None]:
+    """Run hard QA rules. Returns (reason, rule_name) or (None, None)."""
+    return _run_rule_list(
+        _HARD_RULES, source, translation, source_lang, target_lang, glossary_terms
+    )
+
+
+def run_soft_checks(
+    source: str,
+    translation: str,
+    source_lang: str = "",
+    target_lang: str = "",
+    glossary_terms: list[dict] | None = None,
+) -> tuple[str | None, str | None]:
+    """Run soft QA rules. Returns (reason, rule_name) or (None, None)."""
+    return _run_rule_list(
+        _SOFT_RULES, source, translation, source_lang, target_lang, glossary_terms
+    )
 
 
 def run_all_checks(
@@ -234,13 +399,20 @@ def run_all_checks(
     glossary_terms: list[dict] | None = None,
 ) -> str | None:
     """Run all QA rules and return the first failure reason, or None if all pass."""
-    kwargs = {
-        "source_lang": source_lang,
-        "target_lang": target_lang,
-        "glossary_terms": glossary_terms,
-    }
-    for rule in _RULES:
-        reason = rule(source, translation, **kwargs)
-        if reason:
-            return reason
-    return None
+    reason, _ = run_first_failure(
+        source, translation, source_lang, target_lang, glossary_terms
+    )
+    return reason
+
+
+def run_first_failure(
+    source: str,
+    translation: str,
+    source_lang: str = "",
+    target_lang: str = "",
+    glossary_terms: list[dict] | None = None,
+) -> tuple[str | None, str | None]:
+    """Run all QA rules; return (reason, rule_name) for the first failure."""
+    return _run_rule_list(
+        _RULES, source, translation, source_lang, target_lang, glossary_terms
+    )

@@ -1,14 +1,34 @@
+# Dependencies
 node_modules/
+frontend/node_modules/
+
+# Build output
 dist/
+frontend/dist/
 *.tsbuildinfo
 
+# Environment
 .env
 .env.*
 !.env.example
+!backend/.env.example
 
+# Runtime data
 data/
+backend/data/
 logs/
 *.log
 
-.DS_Store
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+*.egg-info/
 
+# IDE / tooling
+.DS_Store
+.codegraph/
+
+# Lock files from mixed package managers (use pnpm)
+frontend/package-lock.json

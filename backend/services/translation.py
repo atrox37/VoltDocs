@@ -7,8 +7,9 @@ from typing import Callable
 import httpx
 
 from services.bedrock import translate_batch_bedrock
+from services.docx.markup import clean_translation_artifacts, normalize_marker_spacing, preserve_circled_prefix
 from services.glossary_matcher import select_terms_for_texts
-from services.qa import run_all_checks
+from services.qa_hybrid import evaluate_segments_qa_with_repair
 from services.prompt import build_system_prompt
 
 logger = logging.getLogger(__name__)
@@ -20,25 +21,33 @@ _RETRY_BASE_DELAY = 2.0   # seconds; actual delay = base * 2^attempt
 _MAX_CONCURRENCY = 5       # max simultaneous Lambda requests
 
 
+def _finalize_draft(source: str, translation: str, target_lang: str = "") -> str:
+    text = preserve_circled_prefix(source, translation or "")
+    text = normalize_marker_spacing(text)
+    return clean_translation_artifacts(text, target_lang=target_lang)
+
+
 def _split_into_batches(
     segments: list[dict],
     max_bytes: int,
     max_segments: int,
 ) -> list[list[dict]]:
-    """Split segments into batches bounded by byte size and segment count.
-
-    Rules:
-    - A batch is sealed when adding the next segment would exceed max_bytes OR
-      the batch already has max_segments entries.
-    - A single segment that exceeds max_bytes on its own is placed alone in a
-      batch (at-least-one guarantee -- never blocks progress).
-    """
+    """Split segments into byte/count-limited batches for Bedrock."""
     batches: list[list[dict]] = []
     current_batch: list[dict] = []
     current_bytes: int = 0
 
     for segment in segments:
-        segment_bytes = len(segment["source_text"].encode("utf-8"))
+        text = segment["source_text"]
+        segment_bytes = len(text.encode("utf-8"))
+
+        if segment_bytes > max_bytes:
+            if current_batch:
+                batches.append(current_batch)
+                current_batch = []
+                current_bytes = 0
+            batches.append([segment])
+            continue
 
         if current_batch and (
             current_bytes + segment_bytes > max_bytes
@@ -53,7 +62,6 @@ def _split_into_batches(
 
     if current_batch:
         batches.append(current_batch)
-
     return batches
 
 
@@ -176,6 +184,7 @@ async def _translate_chunk_via_bedrock(
         model_id=model_id,
         region=region,
         aws_profile=aws_profile or None,
+        all_glossary_terms=glossary_terms,
     )
 
 
@@ -191,9 +200,16 @@ async def translate_segments(
     glossary_max_prompt_chars: int = 12000,
     batch_max_bytes: int = 5000,
     batch_max_segments: int = 120,
-    bedrock_model_id: str = "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    bedrock_model_id: str = "us.amazon.nova-lite-v1:0",
     bedrock_region: str = "us-east-1",
     bedrock_aws_profile: str = "",
+    qa_ai_enabled: bool = True,
+    qa_ai_model_id: str = "us.amazon.nova-micro-v1:0",
+    qa_ai_uncertain_threshold: float = 0.75,
+    qa_ai_batch_max_segments: int = 40,
+    qa_repair_enabled: bool = True,
+    qa_repair_max_attempts: int = 2,
+    qa_repair_batch_max_segments: int = 40,
     on_batch_done: "Callable[[int, int], None] | None" = None,
 ) -> list[dict]:
     use_bedrock = not lambda_url.strip()
@@ -241,24 +257,45 @@ async def translate_segments(
             for item in batch:
                 results_by_id[item["id"]] = item
 
+        drafts_by_id = {
+            segment["id"]: _finalize_draft(
+                segment["source_text"],
+                results_by_id.get(segment["id"], {}).get("translation", ""),
+                target_lang,
+            )
+            for segment in segments
+        }
+        qa_results, drafts_by_id = await evaluate_segments_qa_with_repair(
+            segments=segments,
+            drafts_by_id=drafts_by_id,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            glossary_terms=glossary_terms,
+            qa_ai_enabled=qa_ai_enabled,
+            bedrock_model_id=qa_ai_model_id or bedrock_model_id,
+            bedrock_region=bedrock_region,
+            bedrock_aws_profile=bedrock_aws_profile,
+            qa_ai_uncertain_threshold=qa_ai_uncertain_threshold,
+            qa_ai_batch_max_segments=qa_ai_batch_max_segments,
+            qa_repair_enabled=qa_repair_enabled,
+            qa_repair_max_attempts=qa_repair_max_attempts,
+            qa_repair_batch_max_segments=qa_repair_batch_max_segments,
+            qa_repair_model_id=bedrock_model_id,
+            glossary_max_terms=glossary_max_terms,
+            glossary_max_prompt_chars=glossary_max_prompt_chars,
+        )
+
         translated: list[dict] = []
         for segment in segments:
             raw = results_by_id.get(segment["id"], {})
-            draft = raw.get("translation", "")
-            qa_reason = run_all_checks(
-                source=segment["source_text"],
-                translation=draft,
-                source_lang=source_lang,
-                target_lang=target_lang,
-                glossary_terms=glossary_terms,
-            )
+            qa = qa_results.get(segment["id"], {"qa_pass": True, "qa_reason": None})
             translated.append({
                 "id": segment["id"],
-                "draft_translation": draft,
+                "draft_translation": drafts_by_id.get(segment["id"], ""),
                 "from_cache": bool(raw.get("fromCache", False)),
                 "tm_quality": int(raw.get("qualityScore", 0)),
-                "qa_pass": qa_reason is None,
-                "qa_reason": qa_reason,
+                "qa_pass": qa["qa_pass"],
+                "qa_reason": qa["qa_reason"],
             })
         return translated
 
@@ -296,23 +333,44 @@ async def translate_segments(
         for item in batch:
             results_by_id[item["id"]] = item
 
+    drafts_by_id = {
+        segment["id"]: _finalize_draft(
+            segment["source_text"],
+            results_by_id.get(segment["id"], {}).get("translation", ""),
+            target_lang,
+        )
+        for segment in segments
+    }
+    qa_results, drafts_by_id = await evaluate_segments_qa_with_repair(
+        segments=segments,
+        drafts_by_id=drafts_by_id,
+        source_lang=source_lang,
+        target_lang=target_lang,
+        glossary_terms=glossary_terms,
+        qa_ai_enabled=qa_ai_enabled,
+        bedrock_model_id=qa_ai_model_id or bedrock_model_id,
+        bedrock_region=bedrock_region,
+        bedrock_aws_profile=bedrock_aws_profile,
+        qa_ai_uncertain_threshold=qa_ai_uncertain_threshold,
+        qa_ai_batch_max_segments=qa_ai_batch_max_segments,
+        qa_repair_enabled=qa_repair_enabled,
+        qa_repair_max_attempts=qa_repair_max_attempts,
+        qa_repair_batch_max_segments=qa_repair_batch_max_segments,
+        qa_repair_model_id=bedrock_model_id,
+        glossary_max_terms=glossary_max_terms,
+        glossary_max_prompt_chars=glossary_max_prompt_chars,
+    )
+
     translated = []
     for segment in segments:
         raw = results_by_id.get(segment["id"], {})
-        draft = raw.get("translation", "")
-        qa_reason = run_all_checks(
-            source=segment["source_text"],
-            translation=draft,
-            source_lang=source_lang,
-            target_lang=target_lang,
-            glossary_terms=glossary_terms,
-        )
+        qa = qa_results.get(segment["id"], {"qa_pass": True, "qa_reason": None})
         translated.append({
             "id": segment["id"],
-            "draft_translation": draft,
+            "draft_translation": drafts_by_id.get(segment["id"], ""),
             "from_cache": bool(raw.get("fromCache", False)),
             "tm_quality": int(raw.get("qualityScore", 0)),
-            "qa_pass": qa_reason is None,
-            "qa_reason": qa_reason,
+            "qa_pass": qa["qa_pass"],
+            "qa_reason": qa["qa_reason"],
         })
     return translated

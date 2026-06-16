@@ -1,62 +1,68 @@
-# VoltDocs Python Backend
+# VoltDocs Backend
 
-新的 Python 后端目录，按 `docs/python-migration-plan.md` 创建，用于替代 `backend-rs/`。
+FastAPI 后端：文档翻译、转换、术语库、用户权限。
 
-当前已完成：
+> 完整说明见项目根目录 [README.md](../README.md)。
 
-- `FastAPI` 入口和 `/api/*` 路由骨架
-- Cognito 登录回调、cookie session、开发模式免认证
-- SQLite 自动建表，兼容现有表结构
-- 术语库、模板、用户角色、审计日志、设置、文件下载
-- 转换任务 `/api/convert/*`
-- 翻译任务 `/api/translation/*`
-- DOCX / XLSX / PPTX 基础解析与导出
-
-## 虚拟环境
-
-已在本目录创建本地虚拟环境：
+## 快速启动
 
 ```powershell
-D:\Project\VoltDocs\backend-py\.venv
-```
-
-激活方式：
-
-```powershell
-cd D:\Project\VoltDocs\backend-py
+cd backend
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+
+copy .env.example .env
+# 本地开发：REQUIRE_AUTH=false，配置 AWS 凭证或 BEDROCK_AWS_PROFILE
+
+python -m uvicorn main:app --host 127.0.0.1 --port 8080 --reload
 ```
 
-不激活也可以，直接用虚拟环境里的 Python 启动。
+API 地址：http://127.0.0.1:8080
 
-## 启动方式
+**Windows `WinError 10013`**：改用 `127.0.0.1` 而非 `0.0.0.0`；或放行防火墙 8080 端口。
 
-推荐：
+## 核心模块
 
-```powershell
-cd D:\Project\VoltDocs\backend-py
-.\.venv\Scripts\python -m uvicorn main:app --host 0.0.0.0 --port 8080 --reload
+```
+backend/
+├── auth/                   # Cognito OAuth、Session 中间件
+├── routes/
+│   ├── translation.py      # 翻译任务、导出、审校数据
+│   ├── convert.py          # MD → DOCX
+│   ├── glossary.py         # 术语库 CRUD / 导入导出
+│   └── users.py            # 用户角色管理
+├── services/
+│   ├── translation.py      # Bedrock 批量翻译编排
+│   ├── qa_hybrid.py        # QA + AI 修复流水线
+│   ├── bedrock.py          # Bedrock Converse API
+│   ├── docx_parser.py      # DOCX 分段（含目录字段）
+│   ├── docx_exporter.py    # DOCX 写回（保留绘图/目录域）
+│   └── docx/
+│       ├── fields.py       # TOC / PAGEREF 标题提取与替换
+│       └── markup.py       # 加粗标记、译文清洗
+└── tests/                  # pytest（pnpm test 从根目录运行）
 ```
 
-如果已经激活虚拟环境，也可以：
+## 配置要点
 
-```powershell
-cd D:\Project\VoltDocs\backend-py
-uvicorn main:app --host 0.0.0.0 --port 8080 --reload
-```
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `REQUIRE_AUTH` | `false` | 生产环境设为 `true` |
+| `BEDROCK_MODEL_ID` | Nova Lite | 翻译 |
+| `QA_AI_MODEL_ID` | Nova Micro | QA 复核 |
+| `QA_REPAIR_MAX_ATTEMPTS` | `1` | 建议 `2` |
+| `TRANSLATION_BATCH_MAX_SEGMENTS` | `40` | 过大易漏译 |
 
-## 配置说明
+## 支持格式
 
-- `.env` 已从 `backend-rs/.env` 复制到本目录。
-- `DATA_DIR=./data` 默认会解析到 `backend-py/data`。
-- 如果你要直接复用 `backend-rs/data`，需要把 `.env` 里的 `DATA_DIR` 改成共享路径。
-- `Pandoc` 仍依赖本机 `pandoc` 可执行文件。
+| 格式 | 翻译 | 说明 |
+|------|------|------|
+| .docx | ✅ | 段落、目录、文本框、内联格式 |
+| .xlsx | ✅ | 单元格级翻译 |
+| .md | ✅ | |
+| .pptx | ❌ | 暂未启用 |
 
-## 验证
+## 生产部署
 
-本地已完成：
-
-- 虚拟环境创建成功
-- 依赖已安装到 `.venv`
-- `main.py` 导入验证通过
-- `compileall backend-py` 通过
+见 [deploy/README.md](../deploy/README.md)。Docker 镜像见 `backend/Dockerfile`。

@@ -1,15 +1,16 @@
 {
   "name": "voltdocs",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.2.0",
   "scripts": {
-    "dev": "concurrently \"pnpm --dir backend dev\" \"pnpm --dir frontend dev\"",
-    "build": "pnpm --dir backend build && pnpm --dir frontend build",
-    "start": "pnpm --dir backend start"
+    "dev": "concurrently -n backend,frontend -c blue,green \"pnpm dev:backend\" \"pnpm dev:frontend\"",
+    "dev:backend": "cd backend && python -m uvicorn main:app --host 127.0.0.1 --port 8080 --reload",
+    "dev:frontend": "pnpm --dir frontend dev",
+    "build": "pnpm --dir frontend build",
+    "test": "cd backend && python -m pytest tests/ -q"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
   },
   "packageManager": "pnpm@10.15.1"
 }
-

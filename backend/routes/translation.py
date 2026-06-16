@@ -19,8 +19,7 @@ from services.excel_exporter import export_excel
 from services.excel_parser import extract_segments as extract_excel_segments
 from services.md_exporter import export_md
 from services.md_parser import extract_segments as extract_md_segments
-# from services.pptx_exporter import export_pptx        # PPTX translation disabled
-# from services.pptx_parser import extract_segments as extract_pptx_segments  # PPTX translation disabled
+# PPTX translation is not supported in the current release.
 from services.storage import create_stored_file_name, sha256_bytes
 from services.translation import translate_segments
 
@@ -100,7 +99,9 @@ def _pick_parser(filename: str):
 
 def _batch_limits_for_file_type(file_type: str, cfg) -> tuple[int, int]:
     if file_type == "xlsx":
-        return min(cfg.translation_batch_max_bytes, 3000), min(cfg.translation_batch_max_segments, 60)
+        return min(cfg.translation_batch_max_bytes, 2500), min(cfg.translation_batch_max_segments, 20)
+    if file_type == "docx":
+        return min(cfg.translation_batch_max_bytes, 2500), min(cfg.translation_batch_max_segments, 15)
     return cfg.translation_batch_max_bytes, cfg.translation_batch_max_segments
 
 
@@ -189,6 +190,13 @@ async def _run_translation_job(app, job_id: str, content: bytes, filename: str, 
             bedrock_model_id=cfg.bedrock_model_id,
             bedrock_region=cfg.bedrock_region,
             bedrock_aws_profile=cfg.bedrock_aws_profile,
+            qa_ai_enabled=cfg.qa_ai_enabled,
+            qa_ai_model_id=cfg.qa_ai_model_id,
+            qa_ai_uncertain_threshold=cfg.qa_ai_uncertain_threshold,
+            qa_ai_batch_max_segments=cfg.qa_ai_batch_max_segments,
+            qa_repair_enabled=cfg.qa_repair_enabled,
+            qa_repair_max_attempts=cfg.qa_repair_max_attempts,
+            qa_repair_batch_max_segments=cfg.qa_repair_batch_max_segments,
             on_batch_done=on_batch_done,
         )
     except Exception as exc:
@@ -232,14 +240,17 @@ async def _run_translation_job(app, job_id: str, content: bytes, filename: str, 
             ),
         )
 
-    # ── (Translation memory removed — using glossary hit counts instead) ────────
-    db.execute(
-        "UPDATE jobs SET status = 'succeeded', progress = 100, result_json = ?, finished_at = ? WHERE id = ?",
-        (json.dumps({"totalSegments": len(segments), "sourceLang": source_lang, "targetLang": target_lang, "fileType": file_type}), now, job_id),
-    )
+    all_pass = all(r["qa_pass"] for r in translated)
+    result_payload: dict = {
+        "totalSegments": len(segments),
+        "sourceLang": source_lang,
+        "targetLang": target_lang,
+        "fileType": file_type,
+        "allQaPass": all_pass,
+    }
+    output_file_id: str | None = None
 
     # ── 全部 QA 通过时自动生成输出文件 ────────────────────────────────────
-    all_pass = all(r["qa_pass"] for r in translated)
     if all_pass:
         try:
             payload_row = db.query_one("SELECT payload_json FROM jobs WHERE id = ?", (job_id,))
@@ -248,17 +259,13 @@ async def _run_translation_job(app, job_id: str, content: bytes, filename: str, 
             if original_path.exists():
                 original_bytes = original_path.read_bytes()
                 if file_type == "docx":
-                    output_bytes = export_docx(original_bytes, segments, translated)
+                    output_bytes = export_docx(original_bytes, segments, translated, target_lang)
                     output_ext = ".docx"
                     mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 elif file_type == "xlsx":
                     output_bytes = export_excel(original_bytes, segments, translated)
                     output_ext = ".xlsx"
                     mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                elif file_type == "pptx":
-                    output_bytes = export_pptx(original_bytes, translated)
-                    output_ext = ".pptx"
-                    mime_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
                 elif file_type == "md":
                     output_bytes = export_md(original_bytes, segments, translated)
                     output_ext = ".md"
@@ -276,12 +283,16 @@ async def _run_translation_job(app, job_id: str, content: bytes, filename: str, 
                         "INSERT INTO files (id, owner_id, kind, original_name, storage_path, mime_type, size, sha256, created_at) VALUES (?, ?, 'translation-output', ?, ?, ?, ?, ?, ?)",
                         (file_id, owner_id, output_name, output_rel, mime_type, len(output_bytes), sha256_bytes(output_bytes), now),
                     )
-                    db.execute(
-                        "UPDATE jobs SET result_json = ?, output_file_id = ? WHERE id = ?",
-                        (json.dumps({"totalSegments": len(segments), "sourceLang": source_lang, "targetLang": target_lang, "fileType": file_type, "allQaPass": True, "autoFileId": file_id, "autoFileName": output_name}), file_id, job_id),
-                    )
+                    output_file_id = file_id
+                    result_payload["autoFileId"] = file_id
+                    result_payload["autoFileName"] = output_name
         except Exception:
             pass  # 自动生成失败不影响任务状态
+
+    db.execute(
+        "UPDATE jobs SET status = 'succeeded', progress = 100, result_json = ?, output_file_id = COALESCE(?, output_file_id), finished_at = ? WHERE id = ?",
+        (json.dumps(result_payload), output_file_id, now, job_id),
+    )
 
 
 @router.get("/api/translation/jobs")
@@ -354,7 +365,8 @@ async def export_job(job_id: str, body: ExportRequest, request: Request, user: C
     if lower.endswith(".docx"):
         parsed_segments = extract_docx_segments(original_bytes)
         export_segments = _build_export_segments(parsed_segments, request_segments)
-        output_bytes = export_docx(original_bytes, parsed_segments, export_segments)
+        target_lang = payload.get("targetLang", "")
+        output_bytes = export_docx(original_bytes, parsed_segments, export_segments, target_lang)
         output_ext = ".docx"
         mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     elif lower.endswith(".xlsx"):
@@ -363,10 +375,6 @@ async def export_job(job_id: str, body: ExportRequest, request: Request, user: C
         output_bytes = export_excel(original_bytes, parsed_segments, export_segments)
         output_ext = ".xlsx"
         mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    elif lower.endswith(".pptx"):
-        output_bytes = export_pptx(original_bytes, export_segments)
-        output_ext = ".pptx"
-        mime_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     elif lower.endswith(".md") or lower.endswith(".markdown"):
         parsed_segments = extract_md_segments(original_bytes)
         export_segments = _build_export_segments(parsed_segments, request_segments)
@@ -380,9 +388,10 @@ async def export_job(job_id: str, body: ExportRequest, request: Request, user: C
     output_rel = f"outputs/{output_name}"
     (cfg.data_dir / output_rel).write_bytes(output_bytes)
     file_id = str(uuid.uuid4())
+    now = request.app.state.now()
     db.execute(
         "INSERT INTO files (id, owner_id, kind, original_name, storage_path, mime_type, size, sha256, created_at) VALUES (?, ?, 'translation-output', ?, ?, ?, ?, ?, ?)",
-        (file_id, user.email, output_name, output_rel, mime_type, len(output_bytes), sha256_bytes(output_bytes), request.app.state.now()),
+        (file_id, user.email, output_name, output_rel, mime_type, len(output_bytes), sha256_bytes(output_bytes), now),
     )
     return {"fileId": file_id, "fileName": output_name, "downloadUrl": f"/api/files/{file_id}/download"}
 
