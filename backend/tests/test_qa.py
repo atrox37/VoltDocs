@@ -43,6 +43,13 @@ def test_check_numbers_allows_thousand_separator_variants() -> None:
     assert check_numbers("价格为1,000元。", "The price is 1000 yuan.") is None
 
 
+def test_check_numbers_handles_decimal_without_month_conversion() -> None:
+    assert check_numbers("Voltage is 6.09 V.", "Voltage is 6.09 V.") is None
+    reason = check_numbers("Voltage is 6.09 V.", "Voltage is normal.")
+    assert reason is not None
+    assert "6.09" in reason
+
+
 def test_hard_and_soft_rule_classification() -> None:
     hard_reason, hard_rule = run_hard_checks("原文", "")
     assert hard_reason == "译文为空"

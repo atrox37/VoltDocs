@@ -76,6 +76,8 @@ def _is_month_number_equivalent(source: str, translation: str, number: str) -> b
     We only relax the numeric check when the source explicitly uses a month
     expression. Standalone numbers like model IDs must still be preserved.
     """
+    if not number.isdigit():
+        return False
     normalized = str(int(number))
     month_names = _MONTH_EQUIVALENTS.get(normalized)
     if not month_names:
