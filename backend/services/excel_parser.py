@@ -15,6 +15,20 @@ def extract_segments(content: bytes) -> list[dict]:
     for sheet in workbook.worksheets:
         if sheet.sheet_state != "visible":
             continue
+        title_text = sheet.title.strip()
+        if title_text and not NON_TRANSLATABLE_PATTERN.fullmatch(title_text):
+            segments.append(
+                {
+                    "id": f"{sheet.title}::__sheet_title__",
+                    "order": len(segments),
+                    "source_text": sheet.title,
+                    "plain_text": title_text,
+                    "style_name": sheet.title,
+                    "segment_type": "sheet_title",
+                    "sheet": sheet.title,
+                    "cell": None,
+                }
+            )
         for row in sheet.iter_rows():
             for cell in row:
                 if cell.data_type == "f":

@@ -49,3 +49,22 @@ def test_export_docx_preserves_inline_drawings_when_replacing_text() -> None:
     assert original_xml.count("<w:drawing") == 1
     assert translated_xml.count("<w:drawing") == 1
     assert "Step One install bracket translated" in translated_xml
+
+
+def test_export_docx_sets_run_language_to_target_lang() -> None:
+    doc = Document()
+    doc.add_paragraph("安装支架")
+    output = BytesIO()
+    doc.save(output)
+
+    original = output.getvalue()
+    segments = extract_segments(original)
+    translated = export_docx(
+        original,
+        segments,
+        [{"translation": "Install bracket"}],
+        target_lang="en-US",
+    )
+
+    translated_xml = _document_xml(translated)
+    assert 'w:lang w:val="en-US"' in translated_xml

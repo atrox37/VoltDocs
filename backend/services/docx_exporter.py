@@ -19,6 +19,31 @@ class RunTemplate:
     rpr: etree._Element | None
 
 
+def _normalize_word_lang(target_lang: str) -> str:
+    return (target_lang or "").strip()
+
+
+def _set_run_language(run: etree._Element, target_lang: str) -> None:
+    lang_value = _normalize_word_lang(target_lang)
+    if not lang_value:
+        return
+    rpr = run.find("./w:rPr", namespaces=NSMAP)
+    if rpr is None:
+        rpr = etree.Element(f"{{{W_NS}}}rPr")
+        run.insert(0, rpr)
+    lang = rpr.find("./w:lang", namespaces=NSMAP)
+    if lang is None:
+        lang = etree.SubElement(rpr, f"{{{W_NS}}}lang")
+    lang.set(f"{{{W_NS}}}val", lang_value)
+
+
+def _apply_target_language_to_paragraph(paragraph: etree._Element, target_lang: str) -> None:
+    if not _normalize_word_lang(target_lang):
+        return
+    for run in paragraph.xpath(".//w:r[.//w:t]", namespaces=NSMAP):
+        _set_run_language(run, target_lang)
+
+
 def _parse_inline_format_markers(text: str) -> list[tuple[str, bool, bool, bool]]:
     parts: list[tuple[str, bool, bool, bool]] = []
     current: list[str] = []
@@ -285,6 +310,7 @@ def export_docx(
                         _replace_field_display_text(paragraph, translation)
                     else:
                         _replace_paragraph_runs(paragraph, translation)
+                    _apply_target_language_to_paragraph(paragraph, target_lang)
                 raw = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone="yes")
                 target_archive.writestr(entry, raw, compress_type=zipfile.ZIP_DEFLATED)
             else:
