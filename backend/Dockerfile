@@ -1,13 +1,19 @@
-FROM python:3.12-slim-bookworm
+FROM python:3.11-slim-bookworm
+
+ENV POETRY_VERSION=2.4.1 \
+    POETRY_VIRTUALENVS_CREATE=false \
+    POETRY_NO_INTERACTION=1
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends pandoc ca-certificates \
+    && apt-get install -y --no-install-recommends pandoc ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir "poetry==$POETRY_VERSION"
+
+COPY pyproject.toml poetry.lock* poetry.toml ./
+RUN poetry install --only main
 
 COPY . .
 

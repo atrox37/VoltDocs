@@ -83,9 +83,9 @@ def terms_for_source(
     target_lang: str,
 ) -> list[dict]:
     """Return glossary entries that appear in a single segment."""
+    del source_lang, target_lang
     if not terms:
         return []
-    is_zh_to_en = source_lang.startswith("zh") and target_lang.startswith("en")
     plain = _strip_inline_markers(source_text)
     plain_lower = plain.lower()
     matched: list[dict] = []
@@ -94,10 +94,13 @@ def terms_for_source(
         tgt = item.get("target", "")
         if not src or not tgt:
             continue
-        if not is_zh_to_en:
-            src, tgt = tgt, src
         if src in plain or src.lower() in plain_lower:
-            matched.append({"source": src, "target": tgt})
+            matched.append(
+                {
+                    "source": src,
+                    "target": tgt,
+                }
+            )
     return matched
 
 
@@ -112,7 +115,7 @@ def apply_glossary_postprocess(
     if not translation.strip() or not terms:
         return translation
 
-    is_zh_to_en = source_lang.startswith("zh") and target_lang.startswith("en")
+    del source_lang, target_lang
     plain_src = _strip_inline_markers(source)
     result = translation
     plain_result = _strip_inline_markers(result).lower()
@@ -122,8 +125,6 @@ def apply_glossary_postprocess(
         tgt = item.get("target", "")
         if not src or not tgt:
             continue
-        if not is_zh_to_en:
-            src, tgt = tgt, src
         if src not in plain_src and src.lower() not in plain_src.lower():
             continue
         if tgt.lower() in plain_result:
@@ -134,6 +135,16 @@ def apply_glossary_postprocess(
         if len(parts) >= 2:
             tail = " ".join(parts[1:])
             pattern = re.compile(rf"\b[\w][\w-]*(?:\s+[\w][\w-]*)*\s+{re.escape(tail)}\b", re.IGNORECASE)
+            new_result, count = pattern.subn(tgt, result, count=1)
+            if count:
+                result = new_result
+                plain_result = _strip_inline_markers(result).lower()
+                continue
+
+        # Replace paraphrases that keep the target prefix but drift on the last noun.
+        if len(parts) >= 2:
+            prefix = " ".join(parts[:-1])
+            pattern = re.compile(rf"\b{re.escape(prefix)}\s+[\w-]+\b", re.IGNORECASE)
             new_result, count = pattern.subn(tgt, result, count=1)
             if count:
                 result = new_result

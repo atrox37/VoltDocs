@@ -76,3 +76,15 @@ def test_inline_markers_is_hard_failure() -> None:
     assert reason is not None
     assert rule_name == "check_inline_markers"
     assert not is_soft_failure_rule(rule_name)
+
+
+def test_check_numbers_rejects_malformed_thousands_separator_spacing() -> None:
+    reason = check_numbers("15,897.707 g", "15, 897.707 g")
+    assert reason == "数字格式错误：千分位分隔符后存在非法空格"
+
+    reason = check_numbers("最高1500V", "Maximum 1, 500 V")
+    assert reason == "数字格式错误：千分位分隔符后存在非法空格"
+
+
+def test_check_numbers_allows_unit_spacing_variants() -> None:
+    assert check_numbers("1500V", "1,500 V") is None

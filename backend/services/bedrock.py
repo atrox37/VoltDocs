@@ -104,10 +104,11 @@ def parse_seg_xml(raw_text: str, *, target_lang: str = "") -> list[dict]:
     def _clean(translation: str) -> str:
         return clean_translation_artifacts(translation.strip(), target_lang=target_lang)
 
-    results = [
-        {"id": match.group(1), "translation": _clean(match.group(2))}
-        for match in _SEG_RE.finditer(raw_text)
-    ]
+    results: list[dict] = []
+    for match in _SEG_RE.finditer(raw_text):
+        translation = _clean(match.group(2))
+        if translation:
+            results.append({"id": match.group(1), "translation": translation})
     if results:
         return results
 
@@ -120,6 +121,27 @@ def parse_seg_xml(raw_text: str, *, target_lang: str = "") -> list[dict]:
         return loose
 
     json_results: list[dict] = []
+    stripped = raw_text.strip()
+    if stripped.startswith("["):
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, list):
+            for item in parsed:
+                if isinstance(item, dict) and item.get("id"):
+                    translation = clean_translation_artifacts(
+                        str(item.get("translation", "")).strip(),
+                        target_lang=target_lang,
+                    )
+                    if translation:
+                        json_results.append({
+                            "id": str(item["id"]),
+                            "translation": translation,
+                        })
+            if json_results:
+                return json_results
+
     for line in raw_text.splitlines():
         line = line.strip()
         if not line.startswith("{"):
@@ -133,13 +155,15 @@ def parse_seg_xml(raw_text: str, *, target_lang: str = "") -> list[dict]:
         except json.JSONDecodeError:
             continue
         if isinstance(item, dict) and item.get("id"):
-            json_results.append({
-                "id": str(item["id"]),
-                "translation": clean_translation_artifacts(
-                    str(item.get("translation", "")).strip(),
-                    target_lang=target_lang,
-                ),
-            })
+            translation = clean_translation_artifacts(
+                str(item.get("translation", "")).strip(),
+                target_lang=target_lang,
+            )
+            if translation:
+                json_results.append({
+                    "id": str(item["id"]),
+                    "translation": translation,
+                })
     return json_results
 
 
@@ -152,33 +176,49 @@ def _build_system_prompt(
     direction = "Chinese text into English" if is_zh_to_en else "English text into Chinese"
 
     glossary_lines = [
-        f"- {item['source']} → {item['target']}"
-        + (f"  [context: {item['context']}]" if item.get("context") else "")
+        f"- {item['source']} -> {item['target']}"
         for item in glossary
     ]
     glossary_section = ""
     if glossary_lines:
         glossary_section = (
-            "\n\nMANDATORY TERMINOLOGY — use these EXACT translations (never paraphrase):\n"
+            "\n\nMANDATORY TERMINOLOGY - use these EXACT translations (never paraphrase):\n"
             + "\n".join(glossary_lines)
         )
 
     return (
         f"You are a professional translator. Translate the provided {direction}.\n\n"
+        "STYLE GOAL:\n"
+        "- Produce natural technical-document English, not literal word-for-word translation.\n"
+        "- Keep terminology consistent across the whole document.\n"
+        "- If a term is not present in the glossary, choose the most standard technical term and reuse that choice consistently.\n"
+        "- Prefer concise, neutral engineering wording over marketing language.\n"
+        "- For headings and numbered section titles in English output, convert Chinese heading punctuation to standard English heading style, such as '1、' -> '1.' and '一、' -> 'I.'.\n\n"
+        "HARD BOUNDARY RULES:\n"
+        "1. Translate only the SOURCE field of each item.\n"
+        "2. Never copy text from glossary terms, titles, labels, or neighboring items into the output unless that exact text already appears inside the SOURCE field.\n"
+        "3. Each item's translation must stay aligned to that item's own source. Never let a nearby heading, label, date, or sheet title replace a paragraph translation.\n"
+        "4. If a segment mixes source-language text with text that is already in the target language, translate only the source-language portion and preserve the target-language portion as-is.\n"
+        "5. If translation_required=true, you must translate the segment into the target language. Never return the original source text or a lightly edited source-language variant.\n"
+        "6. If translation_required=false, preserve identifiers, standards, model numbers, dimensions, and pure numeric/unit expressions exactly as needed.\n"
+        "7. Short labels such as O1, O2, KR1.1, headings, dates, and sheet titles must stay short and must never replace a long segment.\n"
+        "8. A long paragraph must remain a long paragraph. It must never collapse into a nearby label, title, or code.\n"
+        "\n"
         "Inline formatting markers:\n"
         "- **bold**, *italic*, ~~strikethrough~~ must be preserved.\n"
         "- A single ~ is NOT a formatting marker.\n\n"
         "MANDATORY RULES:\n"
         "1. Translate EVERY segment exactly as given. Never refuse.\n"
-        "2. Output ONLY translated text in the required format. No commentary.\n"
+        "2. Output ONLY the translated text itself in the required format. No commentary, no input echo, no schema repetition, and no prefixes or suffixes such as 'translated text=', 'translation=', quotes, labels, or metadata.\n"
         "3. Preserve all numbers, units, model codes, and part codes.\n"
-        "4. Circled numbers (①②③) and step numbers: keep as equivalent labels, do not expand into paragraphs.\n"
-        "5. Long paragraphs: translate fully, do not collapse into a number or label.\n"
-        "6. CRITICAL BATCH RULES:\n"
-        "   - Output EXACTLY one result per input segment; NEVER skip or merge segments.\n"
-        "   - Copy each seg id EXACTLY — do not renumber or invent ids.\n"
-        "   - Short labels (①②③, step numbers, single words) stay short in translation.\n"
-        "   - Do NOT shift content between segments."
+        "3a. Never insert spaces inside grouped numbers. Correct: 1,500 / 150,000 / 15,897.707. Incorrect: 1, 500 / 150, 000 / 15, 897.707.\n"
+        "3b. Use the punctuation conventions of the TARGET language. Do not carry over source-language punctuation when standard target-language punctuation should be used.\n"
+        "4. Circled numbers and step numbers must stay short and not expand into paragraphs.\n"
+        "5. Long paragraphs must be translated fully.\n"
+        "6. Output EXACTLY one result per input segment. Never skip, merge, or renumber ids.\n"
+        "7. When an item contains its own glossary block, that glossary is mandatory for that item only.\n"
+        "8. If SOURCE contains natural-language content in the source language and translation_required=true, the output must be a target-language translation, not source-language copy, not a neighboring code, and not a nearby label.\n"
+        "9. Never prefix the translation with labels such as 'translated text=', 'translation=', 'translated_text=', or similar metadata. Return only the final translated content inside each <seg>."
         + glossary_section
     )
 
@@ -188,13 +228,31 @@ def _format_user_message(
     source_lang: str,
     target_lang: str,
 ) -> str:
-    segments_xml = "\n".join(f'<seg id="{s["id"]}">{s["text"]}</seg>' for s in segments)
+    formatted_segments = []
+    for segment in segments:
+        formatted_segments.append(
+            {
+                "id": segment["id"],
+                "sourceText": segment["text"],
+                "needsTranslation": bool(segment.get("translationRequired", True)),
+                "glossary": [
+                    {
+                        "source": item.get("source", ""),
+                        "target": item.get("target", ""),
+                    }
+                    for item in segment.get("glossary") or []
+                    if item.get("source") and item.get("target")
+                ],
+            }
+        )
+    segments_json = json.dumps(formatted_segments, ensure_ascii=False)
     return (
         f"Translate the following {len(segments)} segments from {source_lang} to {target_lang}.\n\n"
         f"Return EXACTLY {len(segments)} segments in the same order, each with its ORIGINAL id.\n"
-        "Use XML format only — one <seg> per line, no other text:\n"
+        "Use XML lines only - one <seg> per line, no other text.\n"
         '<seg id="ORIGINAL_ID">translated text</seg>\n\n'
-        f"Segments to translate ({len(segments)} total):\n{segments_xml}"
+        "Do not repeat the input JSON. Do not output sourceText, needsTranslation, or glossary fields.\n\n"
+        f"Segments to translate ({len(segments)} total):\n{segments_json}"
     )
 
 
@@ -261,7 +319,7 @@ async def translate_batch_bedrock(
     aws_profile: str | None = None,
     all_glossary_terms: list[dict] | None = None,
 ) -> list[dict]:
-    del all_glossary_terms  # glossary injected per batch in translation.py
+    del all_glossary_terms
     if not segments:
         return []
 

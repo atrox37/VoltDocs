@@ -9,10 +9,10 @@ import Convert from "./pages/Convert";
 import Translate from "./pages/Translate";
 import Templates from "./pages/Templates";
 import Memory from "./pages/Memory";
-import Settings from "./pages/Settings";
 import Login from "./pages/Login";
 import Admin from "./pages/Admin";
 import AuditLogs from "./pages/AuditLogs";
+import QualityDashboard from "./pages/QualityDashboard";
 
 const App = () => (
   <ConfigProvider
@@ -38,9 +38,9 @@ const App = () => (
                 <Route path="/translate" element={<Translate />} />
                 <Route path="/templates" element={<Templates />} />
                 <Route path="/memory" element={<Memory />} />
-                <Route path="/settings" element={<Settings />} />
                 <Route element={<RoleRoute minRole="super_admin" />}>
                   <Route path="/admin" element={<Admin />} />
+                  <Route path="/quality-dashboard" element={<QualityDashboard />} />
                 </Route>
                 <Route element={<RoleRoute minRole="manager" />}>
                   <Route path="/audit-logs" element={<AuditLogs />} />

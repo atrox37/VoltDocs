@@ -107,6 +107,7 @@ def repair_strategy_for_rule(rule_name: str) -> str:
     """Return repair strategy: markers | glossary | retranslate | repair."""
     if rule_name in (
         "check_empty",
+        "check_untranslated_copy",
         "check_language_leakage",
         "check_segment_alignment",
         "check_markup_artifacts",

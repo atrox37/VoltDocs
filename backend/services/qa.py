@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import re
 
+from services.translation_align import is_likely_misaligned, is_untranslated_copy
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -40,6 +42,26 @@ def _extract_numbers(text: str) -> list[str]:
     return sorted(set(normalized))
 
 
+def _normalize_numeric_surface(text: str) -> str:
+    normalized = (
+        text.replace("，", ",")
+        .replace("、", ",")
+        .replace("\u00a0", " ")
+        .replace("\u202f", " ")
+    )
+    # Remove separators that are only acting as digit grouping.
+    normalized = re.sub(r"(?<=\d)\s+(?=\d)", "", normalized)
+    normalized = re.sub(r"(?<=\d),(?=\d{3}(?:\D|$))", "", normalized)
+    # Normalize spacing between a number and a unit/symbol token.
+    normalized = re.sub(r"(?<=\d)\s+(?=[A-Za-zµμΩ])", "", normalized)
+    normalized = re.sub(r"(?<=[A-Za-zµμΩ])\s+(?=\d)", "", normalized)
+    return normalized
+
+
+def _has_malformed_thousands_separator(text: str) -> bool:
+    normalized = text.replace("\u00a0", " " ).replace("\u202f", " " )
+    return bool(re.search(r"(?<=\d)\s*(?:,|\uFF0C)\s+(?=\d{3}(?:\D|$))", normalized))
+
 def _count_cjk(text: str) -> int:
     return sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff")
 
@@ -50,6 +72,11 @@ def _count_latin(text: str) -> int:
 
 def _strip_inline_markers(text: str) -> str:
     return re.sub(r"\*{1,3}|~~", "", text)
+
+
+def _normalize_compare_text(text: str) -> str:
+    stripped = _strip_inline_markers(text or "")
+    return re.sub(r"\s+", " ", stripped).strip().lower()
 
 
 def _source_has_month_expression(source: str, number: str) -> bool:
@@ -92,7 +119,8 @@ def _is_month_number_equivalent(source: str, translation: str, number: str) -> b
 def _translation_contains_number(translation: str, number: str) -> bool:
     if number in translation:
         return True
-    return number in translation.replace(",", "")
+    normalized_translation = _normalize_numeric_surface(translation)
+    return number in normalized_translation.replace(",", "")
 
 
 def _has_numeric_equivalent(source: str, translation: str, number: str) -> bool:
@@ -113,6 +141,8 @@ def check_empty(source: str, translation: str, **_) -> str | None:
 
 def check_numbers(source: str, translation: str, **_) -> str | None:
     """All significant numbers in the source must appear in the translation."""
+    if _has_malformed_thousands_separator(translation):
+        return "数字格式错误：千分位分隔符后存在非法空格"
     numbers = _extract_numbers(source)
     missing = [n for n in numbers if not _has_numeric_equivalent(source, translation, n)]
     if missing:
@@ -207,6 +237,18 @@ def check_language_leakage(source: str, translation: str, source_lang: str = "",
         if latin_ratio > 0.60:
             return "疑似未翻译（目标语言应为中文，但译文大部分仍为英文）"
 
+    return None
+
+
+def check_untranslated_copy(
+    source: str,
+    translation: str,
+    source_lang: str = "",
+    target_lang: str = "",
+    **_,
+) -> str | None:
+    if is_untranslated_copy(source, translation, source_lang, target_lang):
+        return "疑似未翻译或直接照搬原文"
     return None
 
 
@@ -308,32 +350,28 @@ def check_markup_artifacts(source: str, translation: str, **_) -> str | None:
     return None
 
 
-# Hard rules: deterministic checks that must never be overridden by AI.
-_HARD_RULES = [
-    check_empty,
-    check_markup_artifacts,
-    check_inline_markers,
-    check_required_terms,
-]
-
-# ── Rule 8: Segment alignment sanity ─────────────────────────────────────────
-
 def check_segment_alignment(source: str, translation: str, **_) -> str | None:
-    """Detect obvious batch mis-mapping (label ↔ paragraph swap)."""
-    from services.translation_align import is_likely_misaligned
-
     if is_likely_misaligned(source, translation):
-        return "译文与原文结构不匹配（疑似段落错位，序号与正文互换）"
+        return "\u5f53\u524d\u5206\u6bb5\u4e0e\u8bd1\u6587\u7ed3\u6784\u4e0d\u5339\u914d\uff0c\u7591\u4f3c\u4e32\u6bb5\u6216\u88ab\u77ed\u6807\u7b7e/\u7f16\u53f7\u8bef\u66ff\u6362"
     return None
 
 
-# Soft rules: heuristic checks — AI may adjudicate false positives.
+# Hard rules: deterministic checks that must never be overridden by AI.
+_HARD_RULES = [
+    check_empty,
+    check_inline_markers,
+    check_untranslated_copy,
+    check_markup_artifacts,
+    check_segment_alignment,
+    check_required_terms,
+]
+
+
 _SOFT_RULES = [
     check_numbers,
     check_length_ratio,
     check_language_leakage,
     check_punctuation,
-    check_segment_alignment,
 ]
 
 # All rules in evaluation order (backward compatible).
@@ -341,9 +379,28 @@ _RULES = _HARD_RULES + _SOFT_RULES
 
 _SOFT_RULE_NAMES = {rule.__name__ for rule in _SOFT_RULES}
 
+_FAILURE_TYPES = {
+    "check_required_terms": "terminology",
+    "check_numbers": "numbers",
+    "check_inline_markers": "formatting",
+    "check_markup_artifacts": "formatting",
+    "check_untranslated_copy": "language_leakage",
+    "check_language_leakage": "language_leakage",
+    "check_segment_alignment": "alignment",
+    "check_empty": "other",
+    "check_length_ratio": "other",
+    "check_punctuation": "other",
+}
+
 
 def is_soft_failure_rule(rule_name: str) -> bool:
     return rule_name in _SOFT_RULE_NAMES
+
+
+def failure_type_for_rule(rule_name: str | None) -> str:
+    if not rule_name:
+        return "other"
+    return _FAILURE_TYPES.get(rule_name, "other")
 
 
 def _run_rule_list(
@@ -401,9 +458,7 @@ def run_all_checks(
     glossary_terms: list[dict] | None = None,
 ) -> str | None:
     """Run all QA rules and return the first failure reason, or None if all pass."""
-    reason, _ = run_first_failure(
-        source, translation, source_lang, target_lang, glossary_terms
-    )
+    reason, _ = run_first_failure(source, translation, source_lang, target_lang, glossary_terms)
     return reason
 
 

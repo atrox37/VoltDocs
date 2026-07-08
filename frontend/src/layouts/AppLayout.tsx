@@ -5,6 +5,7 @@ import {
   ContainerOutlined,
   DatabaseOutlined,
   FileTextOutlined,
+  FundOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -23,16 +24,17 @@ const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
 
 function buildMenuItems(role: UserRole | undefined): MenuProps["items"] {
-  const systemChildren: MenuProps["items"] = [];
+  const systemChildren: NonNullable<MenuProps["items"]> = [];
 
   if (isSuperAdmin(role)) {
     systemChildren.push({ key: "/admin", icon: <TeamOutlined />, label: "用户管理" });
+    systemChildren.push({ key: "/quality-dashboard", icon: <FundOutlined />, label: "质量仪表盘" });
   }
   if (hasMinRole(role, "manager")) {
     systemChildren.push({ key: "/audit-logs", icon: <ContainerOutlined />, label: "操作日志" });
   }
 
-  const items: MenuProps["items"] = [
+  const items: NonNullable<MenuProps["items"]> = [
     {
       type: "group",
       label: "工作流",
@@ -76,11 +78,9 @@ export default function AppLayout() {
         <div style={{ padding: "4px 0" }}>
           <div style={{ fontWeight: 600 }}>{user?.name}</div>
           <div style={{ fontSize: 12, color: "#888" }}>{user?.email}</div>
-          {user?.role && (
-            <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>
-              {ROLE_LABEL[user.role]}
-            </div>
-          )}
+          {user?.role ? (
+            <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>{ROLE_LABEL[user.role]}</div>
+          ) : null}
         </div>
       ),
       disabled: true,
@@ -98,11 +98,11 @@ export default function AppLayout() {
   const pageTitles: Record<string, { title: string; subtitle: string }> = {
     "/convert": {
       title: "文档转换",
-      subtitle: "将 Markdown 文件转换为 Word 文档，支持套用公司模板统一输出格式。",
+      subtitle: "将 Markdown 文档转换为 Word 文档，统一输出版式。",
     },
     "/translate": {
       title: "文档翻译",
-      subtitle: "上传 Word 或 Excel 文档，创建双向翻译任务并进入个人审校流程。",
+      subtitle: "上传 Word 或 Excel 文档，创建翻译任务并处理 QA 复核。",
     },
     "/templates": {
       title: "模板中心",
@@ -110,15 +110,15 @@ export default function AppLayout() {
     },
     "/memory": {
       title: "术语库",
-      subtitle: "维护中英术语对，翻译时会按方向自动双向使用同一套术语。",
-    },
-    "/settings": {
-      title: "系统设置",
-      subtitle: "管理翻译任务的基础配置。",
+      subtitle: "维护中英术语对，翻译时按语言方向自动应用。",
     },
     "/admin": {
       title: "用户管理",
       subtitle: "管理用户角色与访问权限。",
+    },
+    "/quality-dashboard": {
+      title: "质量仪表盘",
+      subtitle: "集中查看全局 QA 与 TM 运行情况，不再在单文件翻译页展示报表。",
     },
     "/audit-logs": {
       title: "操作日志",
@@ -150,14 +150,14 @@ export default function AppLayout() {
           }}
         >
           <BrandIcon size={32} />
-          {!collapsed && (
+          {!collapsed ? (
             <div style={{ lineHeight: 1.2 }}>
               <div style={{ fontSize: 15, fontWeight: 600, color: "#1b3a6b" }}>VoltDocs</div>
               <div style={{ fontSize: 10, color: "#999", letterSpacing: 1, textTransform: "uppercase" }}>
                 Voltage Internal
               </div>
             </div>
-          )}
+          ) : null}
         </div>
 
         <Menu
@@ -207,7 +207,7 @@ export default function AppLayout() {
             height: "calc(100vh - 64px)",
           }}
         >
-          {current.title && (
+          {current.title ? (
             <div style={{ padding: "16px 24px 0", flexShrink: 0 }}>
               <Typography.Title level={4} style={{ marginBottom: 0 }}>
                 {current.title}
@@ -216,13 +216,15 @@ export default function AppLayout() {
                 {current.subtitle}
               </Text>
             </div>
-          )}
-          <div style={{
-            flex: 1,
-            overflow: "auto",
-            padding: "12px 24px 24px",
-            minHeight: 0,
-          }}>
+          ) : null}
+          <div
+            style={{
+              flex: 1,
+              overflow: "auto",
+              padding: "12px 24px 24px",
+              minHeight: 0,
+            }}
+          >
             <Outlet />
           </div>
         </Content>

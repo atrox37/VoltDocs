@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 _SEG_RE = re.compile(r'<seg\s+id="([^"]+)">([\s\S]*?)</seg>')
 _JSON_LINE_RE = re.compile(r"^\s*\{.*\}\s*$")
 _PROMPT_TAG_RE = re.compile(
-    r"</?(?:source|current_translation|corrected_translation|item|qa_failure|mandatory_glossary|prev_source|prev_translation|next_source|next_translation)(?:\s[^>]*)?>",
+    r"</?(?:source|current_translation|corrected_translation|item|qa_failure|mandatory_glossary)(?:\s[^>]*)?>",
     re.IGNORECASE,
 )
 _CORRECTED_RE = re.compile(
@@ -32,15 +32,24 @@ def _build_system_prompt(source_lang: str, target_lang: str) -> str:
         f"Source language: {source_lang}\n"
         f"Target language: {target_lang}\n\n"
         "Each item failed automated QA. Return a corrected translation for each id.\n\n"
-        "OUTPUT FORMAT — one JSON object per line, no other text:\n"
+        "HARD BOUNDARY RULES:\n"
+        "1. Repair only the CURRENT segment for that item.\n"
+        "2. SOURCE is the only content that may be translated.\n"
+        "3. Never let a neighboring title, label, date, sheet name, or code replace the translation of the current SOURCE segment.\n"
+        "4. A long paragraph must remain a long paragraph. It must never collapse into O1, O2, KR1.1, a heading, or a nearby title.\n"
+        "5. If SOURCE mixes source-language text with text that is already in the target language, translate only the source-language portion and preserve the target-language portion as-is.\n\n"
+        "6. If CURRENT is untranslated, mostly untranslated, or still mostly in the source language, rewrite it into a complete target-language translation.\n\n"
+        "OUTPUT FORMAT - one JSON object per line, no other text:\n"
         '{"id":"<id>","translation":"<fixed text>"}\n\n'
         "Rules:\n"
         "1. Preserve **bold**, *italic*, and ~~strikethrough~~ markers (never use backslash escapes)\n"
         "2. Use mandatory glossary terms exactly when provided\n"
         "3. For empty or untranslated text: produce a complete target-language translation\n"
-        "4. Circled numbers (①②③): keep short — translate the label only, never leave empty\n"
+        "4. Circled numbers and short step labels must stay short\n"
         "5. Never echo SOURCE/CURRENT fields; never wrap output in XML tags\n"
-        "6. Keep numbers, units, and model codes accurate"
+        "6. Keep numbers, units, and model codes accurate\n"
+        "7. Never insert spaces inside grouped numbers such as 1,500 / 150,000 / 15,897.707\n"
+        "8. If SOURCE contains natural-language text in the source language, do not return unchanged source-language text and do not replace it with a neighboring code such as PG16-14G"
     )
 
 
@@ -55,14 +64,15 @@ def _build_user_message(items: list[dict]) -> str:
         ]
         glossary_block = ""
         if glossary_lines:
-            glossary_block = "GLOSSARY (mandatory):\n" + "\n".join(glossary_lines) + "\n"
+            glossary_block = "GLOSSARY (reference-only terminology constraints, do not translate):\n" + "\n".join(glossary_lines) + "\n"
 
         blocks.append(
             f"--- id={item['id']} strategy={strategy} ---\n"
             f"QA_FAILURE: {item['qa_reason']}\n"
+            f"{glossary_block}"
+            "ONLY FIELD TO TRANSLATE / REPAIR:\n"
             f"SOURCE: {item['source']}\n"
             f"CURRENT: {item['translation'] or '(empty)'}\n"
-            f"{glossary_block}"
         )
     return (
         "Repair each item. Return one JSON line per id with the fixed translation only.\n\n"
@@ -174,15 +184,10 @@ def build_repair_item(
     translation: str,
     qa_reason: str,
     rule_name: str,
-    segments: list[dict],
-    index: int,
-    drafts_by_id: dict[str, str],
     glossary_terms: list[dict] | None,
     glossary_max_terms: int,
     glossary_max_prompt_chars: int,
 ) -> dict:
-    prev_seg = segments[index - 1] if index > 0 else None
-    next_seg = segments[index + 1] if index + 1 < len(segments) else None
     matched_glossary = []
     if glossary_terms:
         matched_glossary = select_terms_for_texts(
@@ -199,8 +204,4 @@ def build_repair_item(
         "rule_name": rule_name,
         "strategy": repair_strategy_for_rule(rule_name),
         "glossary": matched_glossary,
-        "prev_source": prev_seg["source_text"] if prev_seg else None,
-        "prev_translation": drafts_by_id.get(prev_seg["id"]) if prev_seg else None,
-        "next_source": next_seg["source_text"] if next_seg else None,
-        "next_translation": drafts_by_id.get(next_seg["id"]) if next_seg else None,
     }

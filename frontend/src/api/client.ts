@@ -22,7 +22,11 @@ export async function request<T>(
     headers["Content-Type"] = "application/json";
   }
 
-  const res = await fetch(url, { ...options, headers });
+  const res = await fetch(url, {
+    ...options,
+    headers,
+    credentials: options.credentials ?? "include",
+  });
 
   if (res.status === 401 && !window.location.pathname.includes('/login')) {
     window.location.href = '/login?error=session_expired';

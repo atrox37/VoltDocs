@@ -14,6 +14,10 @@ def test_clean_translation_artifacts_strips_seg_tag() -> None:
     )
 
 
+def test_clean_translation_artifacts_strips_placeholder_leakage() -> None:
+    assert clean_translation_artifacts("<translated text>", target_lang="en-US") == ""
+
+
 def test_parse_seg_xml_cleans_json_translation_with_seg_echo() -> None:
     raw = '{"id": "seg-273", "translation": "<seg id=\\"seg-273\\">Hello</seg>"}'
     parsed = parse_seg_xml(raw, target_lang="en-US")

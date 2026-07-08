@@ -1,26 +1,16 @@
 import { useEffect, useState } from "react";
-import {
-  App,
-  Table,
-  Tag,
-  Select,
-  Button,
-  Modal,
-  notification,
-  Typography,
-  Space,
-} from "antd";
+import { App, Button, Modal, Select, Table, Tag, Typography } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import { listUsers, updateUserRole, type UserEntry } from "../api/users";
 import type { UserRole } from "../api/auth";
+import { listUsers, updateUserRole, type UserEntry } from "../api/users";
 import { ROLE_COLOR, ROLE_LABEL, ROLE_OPTIONS } from "../auth/permissions";
 import { useAuth } from "../contexts/AuthContext";
 
 const { Text } = Typography;
 
 export default function Admin() {
-  const { notification: notif } = App.useApp();
+  const { notification } = App.useApp();
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<UserEntry[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
@@ -32,16 +22,18 @@ export default function Admin() {
       const data = await listUsers();
       setUsers(data);
     } catch (err: unknown) {
-      notif.error({
-        message: "加载用户列表失败",
-        description: err instanceof Error ? err.message : "未知错误",
+      notification.error({
+        message: "Failed to load users",
+        description: err instanceof Error ? err.message : "Unknown error",
       });
     } finally {
       setLoadingUsers(false);
     }
   };
 
-  useEffect(() => { fetchUsers(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    void fetchUsers();
+  }, []);
 
   const handleRoleChange = (email: string, newRole: UserRole) => {
     const isSelf = currentUser?.email === email;
@@ -51,15 +43,15 @@ export default function Admin() {
       setUpdatingRow(email);
       try {
         await updateUserRole(email, newRole);
-        notif.success({
-          message: "角色已更新",
-          description: `${email} 的角色已更改为「${ROLE_LABEL[newRole]}」`,
+        notification.success({
+          message: "Role updated",
+          description: `${email} is now ${ROLE_LABEL[newRole]}.`,
         });
         await fetchUsers();
       } catch (err: unknown) {
-        notif.error({
-          message: "角色更新失败",
-          description: err instanceof Error ? err.message : "未知错误",
+        notification.error({
+          message: "Failed to update role",
+          description: err instanceof Error ? err.message : "Unknown error",
         });
       } finally {
         setUpdatingRow(null);
@@ -68,27 +60,28 @@ export default function Admin() {
 
     if (isSelf && isDowngrade) {
       Modal.confirm({
-        title: "降低自己的权限",
-        content: `您正在将自己从「超级管理员」降级为「${ROLE_LABEL[newRole]}」。降级后将失去用户管理权限，且如果您是最后一名超级管理员，系统将拒绝此操作。确定要继续吗？`,
-        okText: "确认降级",
+        title: "Lower your own role?",
+        content: `You are changing your own account to ${ROLE_LABEL[newRole]}. If this is the last super admin account, the backend will reject the change.`,
+        okText: "Confirm",
         okButtonProps: { danger: true },
-        cancelText: "取消",
+        cancelText: "Cancel",
         onOk: doUpdate,
       });
-    } else {
-      doUpdate();
+      return;
     }
+
+    void doUpdate();
   };
 
   const columns: ColumnsType<UserEntry> = [
     {
-      title: "邮箱",
+      title: "Email",
       dataIndex: "email",
       key: "email",
       ellipsis: true,
     },
     {
-      title: "角色",
+      title: "Role",
       dataIndex: "role",
       key: "role",
       width: 130,
@@ -99,15 +92,14 @@ export default function Admin() {
       ),
     },
     {
-      title: "最后登录",
+      title: "Last Login",
       dataIndex: "lastLogin",
       key: "lastLogin",
       width: 200,
-      render: (v: string | null) =>
-        v ? new Date(v).toLocaleString("zh-CN") : "—",
+      render: (value: string | null) => (value ? new Date(value).toLocaleString("zh-CN") : "-"),
     },
     {
-      title: "操作",
+      title: "Action",
       key: "actions",
       width: 160,
       render: (_: unknown, record: UserEntry) => (
@@ -117,7 +109,7 @@ export default function Admin() {
           style={{ width: 130 }}
           loading={updatingRow === record.email}
           disabled={updatingRow === record.email}
-          onChange={(val) => handleRoleChange(record.email, val)}
+          onChange={(value) => handleRoleChange(record.email, value)}
           options={ROLE_OPTIONS}
         />
       ),
@@ -128,10 +120,10 @@ export default function Admin() {
     <div>
       <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <Text type="secondary" style={{ fontSize: 13 }}>
-          管理系统用户的角色与权限。超级管理员可以提升或降低其他用户的权限级别。
+          Manage application roles. Super admins can promote or demote other users.
         </Text>
-        <Button icon={<ReloadOutlined />} onClick={fetchUsers} loading={loadingUsers}>
-          刷新
+        <Button icon={<ReloadOutlined />} onClick={() => void fetchUsers()} loading={loadingUsers}>
+          Refresh
         </Button>
       </div>
       <Table
@@ -141,7 +133,7 @@ export default function Admin() {
         loading={loadingUsers}
         pagination={{ pageSize: 20, showSizeChanger: false }}
         size="middle"
-        locale={{ emptyText: "暂无用户记录" }}
+        locale={{ emptyText: "No users found" }}
       />
     </div>
   );

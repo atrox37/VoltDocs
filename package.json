@@ -4,10 +4,10 @@
   "version": "0.2.0",
   "scripts": {
     "dev": "concurrently -n backend,frontend -c blue,green \"pnpm dev:backend\" \"pnpm dev:frontend\"",
-    "dev:backend": "cd backend && python -m uvicorn main:app --host 127.0.0.1 --port 8080 --reload",
+    "dev:backend": "cd backend && poetry run uvicorn main:app --host 127.0.0.1 --port 8080 --reload",
     "dev:frontend": "pnpm --dir frontend dev",
     "build": "pnpm --dir frontend build",
-    "test": "cd backend && python -m pytest tests/ -q"
+    "test": "cd backend && poetry run pytest tests -q"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

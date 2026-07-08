@@ -13,22 +13,65 @@ frontend/dist/
 !.env.example
 !backend/.env.example
 
-# Runtime data
+# Runtime data (保留 templates 和 glossary-imports)
 data/
 backend/data/
+!backend/data/templates/
+!backend/data/glossary-imports/
 logs/
 *.log
 
 # Python
 __pycache__/
 *.py[cod]
+*$py.class
 .pytest_cache/
 .venv/
+venv/
 *.egg-info/
+*.egg
+PIPFILE*
+poetry.lock
+
+# Node 包管理器
+# pnpm-lock.yaml 保留，忽略其他
+package-lock.json
+yarn.lock
 
 # IDE / tooling
 .DS_Store
+Thumbs.db
 .codegraph/
+.tmp/
+*.swp
+*.swo
+*~
 
-# Lock files from mixed package managers (use pnpm)
-frontend/package-lock.json
+# 后端运行日志
+backend/*.log
+backend/backend-dev.*.log
+backend\auth\__pycache__
+# 数据库文件
+*.db
+*.db-shm
+*.db-wal
+
+# 测试coverage
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# Flask/Django
+instance/
+.webassets-cache
+*.mo
+*.pot
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# OS 临时文件
+.DS_Store
+desktop.ini

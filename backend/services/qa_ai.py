@@ -28,6 +28,11 @@ def _build_system_prompt(source_lang: str, target_lang: str) -> str:
         f"Target language: {target_lang}\n\n"
         "Each item was flagged by an automated rule. Your job is to decide whether the "
         "translation is actually acceptable despite the rule warning.\n\n"
+        "HARD REVIEW RULES:\n"
+        "1. Judge only the current item's source and translation.\n"
+        "2. Never assume nearby titles, labels, dates, or headings are acceptable substitutes for a paragraph translation.\n"
+        "3. If the translation appears to copy a neighboring label or title instead of translating the current source, it must FAIL.\n"
+        "4. Mixed-language output may PASS only when it still correctly translates the current source and preserves target-language fragments that already belong in the source.\n\n"
         "Treat these as EQUIVALENT (should PASS):\n"
         "- Number formatting: 1000 = 1,000 = 1 000\n"
         "- Month expressions: 11月 = November = Nov\n"
@@ -57,6 +62,41 @@ def _build_user_message(items: list[dict]) -> str:
         )
     return (
         "Review the following flagged translation segments.\n"
+        "Return a JSON array with one verdict per id.\n\n"
+        + "\n".join(blocks)
+    )
+
+
+def _build_tm_candidate_system_prompt(source_lang: str, target_lang: str) -> str:
+    return (
+        "You are reviewing whether a translation-memory candidate can be safely reused for the current segment.\n"
+        f"Source language: {source_lang}\n"
+        f"Target language: {target_lang}\n\n"
+        "Your job is NOT to translate. Your job is only to decide whether the candidate translation is safe to reuse.\n\n"
+        "DECISION RULES:\n"
+        "1. Accept only when the candidate accurately translates the current source segment.\n"
+        "2. Reject if the candidate looks copied from a neighboring title, label, date, heading, or unrelated segment.\n"
+        "3. Reject if meaning, terminology, or structure does not match the current source.\n"
+        "4. When uncertain, return pass=false with a short reason.\n\n"
+        "Respond with ONLY a JSON array. No markdown, no explanation outside JSON.\n"
+        "Each element must have:\n"
+        '  {"id": "<segment id>", "pass": true|false, "confidence": 0.0-1.0, "reason": "<short Chinese explanation or null>"}\n'
+        "Use concise Simplified Chinese for non-null reason fields."
+    )
+
+
+def _build_tm_candidate_user_message(items: list[dict]) -> str:
+    blocks: list[str] = []
+    for item in items:
+        blocks.append(
+            f'<item id="{item["id"]}">\n'
+            f"<candidate_scope>{item.get('candidate_scope', '')}</candidate_scope>\n"
+            f"<source>{item['source']}</source>\n"
+            f"<candidate_translation>{item['translation']}</candidate_translation>\n"
+            f"</item>"
+        )
+    return (
+        "Review the following TM reuse candidates.\n"
         "Return a JSON array with one verdict per id.\n\n"
         + "\n".join(blocks)
     )
@@ -124,6 +164,30 @@ async def adjudicate_soft_failures(
     raw = await invoke_bedrock_text(
         system_prompt=_build_system_prompt(source_lang, target_lang),
         user_message=_build_user_message(items),
+        model_id=model_id,
+        region=region,
+        aws_profile=aws_profile,
+        max_tokens=4096,
+        temperature=0.0,
+    )
+    return _parse_verdicts(raw, expected_ids)
+
+
+async def adjudicate_tm_candidates(
+    items: list[dict],
+    source_lang: str,
+    target_lang: str,
+    model_id: str,
+    region: str,
+    aws_profile: str | None = None,
+) -> dict[str, AiQaVerdict]:
+    if not items:
+        return {}
+
+    expected_ids = {item["id"] for item in items}
+    raw = await invoke_bedrock_text(
+        system_prompt=_build_tm_candidate_system_prompt(source_lang, target_lang),
+        user_message=_build_tm_candidate_user_message(items),
         model_id=model_id,
         region=region,
         aws_profile=aws_profile,

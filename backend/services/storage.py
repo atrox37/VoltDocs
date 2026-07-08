@@ -16,5 +16,11 @@ def create_stored_file_name(original_name: str) -> str:
     return f"{uuid.uuid4().hex[:8]}_{safe_name}"
 
 
+def sanitize_download_file_name(file_name: str, fallback: str = "output") -> str:
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1F]', "_", (file_name or "").strip())
+    cleaned = cleaned.rstrip(". ")
+    return cleaned or fallback
+
+
 def sha256_bytes(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()

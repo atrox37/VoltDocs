@@ -1,4 +1,4 @@
-import { get, uploadFile, post } from "./client";
+import { get, post, uploadFile } from "./client";
 
 export interface TranslationJob {
   id: string;
@@ -16,6 +16,19 @@ export interface TranslationJob {
     allQaPass?: boolean;
     autoFileId?: string;
     autoFileName?: string;
+    tmHits?: number;
+    tmStored?: number;
+    tmInserted?: number;
+    tmUpdated?: number;
+    tmSkipped?: number;
+    tmPruned?: number;
+    qaProfile?: {
+      roundCount: number;
+      mostCommonRuleName?: string | null;
+      ruleCounts: Record<string, number>;
+      failureTypes: Record<string, number>;
+      stoppedSegments: number;
+    } | null;
   };
   errorMessage?: string;
   createdAt: string;
@@ -34,6 +47,34 @@ export interface TranslationSegment {
   qaReason?: string;
   fromCache: boolean;
   tmQuality: number;
+  glossaryDebug?: {
+    matchedTerms: Array<{
+      source: string;
+      target: string;
+      context?: string;
+    }>;
+    contextBefore?: string;
+    contextAfter?: string;
+    postprocessApplied: boolean;
+    postprocessBefore?: string | null;
+    postprocessAfter?: string | null;
+    finalCheckPassed: boolean;
+    finalCheckReason?: string | null;
+  } | null;
+  qaDebug?: {
+    history: Array<{
+      round: number;
+      qaPass: boolean;
+      ruleName?: string | null;
+      failureType?: string | null;
+      reason?: string | null;
+      translation: string;
+    }>;
+    stoppedEarly: boolean;
+    stoppedReason?: string | null;
+    finalRuleName?: string | null;
+    finalFailureType?: string | null;
+  } | null;
 }
 
 export interface JobDetail {
@@ -62,16 +103,12 @@ export function getJobProgress(jobId: string) {
 
 export function exportTranslation(
   jobId: string,
-  segments: Array<{ sourceText: string; translation: string }>
+  segments: Array<{ sourceText: string; translation: string }>,
 ) {
   return post<{ fileId: string; fileName: string; downloadUrl: string }>(
     `/translation/jobs/${jobId}/export`,
-    { segments }
+    { segments },
   );
-}
-
-export function exportTmCsv() {
-  window.open("/api/translation/memory/export-csv", "_blank");
 }
 
 export async function batchDownloadFiles(fileIds: string[], zipName: string): Promise<void> {
@@ -81,14 +118,16 @@ export async function batchDownloadFiles(fileIds: string[], zipName: string): Pr
     body: JSON.stringify({ fileIds, zipName }),
     credentials: "include",
   });
-  if (!res.ok) throw new Error(`批量下载失败: ${res.status}`);
+  if (!res.ok) {
+    throw new Error(`Batch download failed: ${res.status}`);
+  }
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = zipName.endsWith(".zip") ? zipName : zipName + ".zip";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = zipName.endsWith(".zip") ? zipName : `${zipName}.zip`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
   URL.revokeObjectURL(url);
 }

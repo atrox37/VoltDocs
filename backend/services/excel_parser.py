@@ -13,8 +13,6 @@ def extract_segments(content: bytes) -> list[dict]:
     workbook = openpyxl.load_workbook(BytesIO(content))
     segments: list[dict] = []
     for sheet in workbook.worksheets:
-        if sheet.sheet_state != "visible":
-            continue
         title_text = sheet.title.strip()
         if title_text and not NON_TRANSLATABLE_PATTERN.fullmatch(title_text):
             segments.append(

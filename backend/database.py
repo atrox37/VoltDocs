@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
-SCHEMA_SQL = """
+INITIAL_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS files (
     id TEXT PRIMARY KEY,
     owner_id TEXT NOT NULL,
@@ -42,6 +43,8 @@ CREATE TABLE IF NOT EXISTS job_segments (
     segment_order INTEGER NOT NULL,
     source_text TEXT NOT NULL,
     draft_translation TEXT DEFAULT '',
+    glossary_debug_json TEXT,
+    qa_debug_json TEXT,
     style_name TEXT,
     segment_type TEXT NOT NULL DEFAULT 'paragraph',
     status TEXT NOT NULL DEFAULT 'pending',
@@ -96,19 +99,29 @@ CREATE TABLE IF NOT EXISTS glossary_audit_logs (
 
 CREATE TABLE IF NOT EXISTS translation_memory (
     id TEXT PRIMARY KEY,
+    scope TEXT NOT NULL DEFAULT 'global',
     source_lang TEXT NOT NULL,
     target_lang TEXT NOT NULL,
     source_hash TEXT NOT NULL,
+    segment_type TEXT NOT NULL DEFAULT 'paragraph',
+    content_class TEXT NOT NULL DEFAULT 'sentence',
     source_text TEXT NOT NULL,
+    source_text_normalized TEXT NOT NULL DEFAULT '',
     target_text TEXT NOT NULL,
     quality INTEGER NOT NULL DEFAULT 100,
+    quality_tier TEXT NOT NULL DEFAULT 'model_generated',
     created_by TEXT,
+    hit_count INTEGER NOT NULL DEFAULT 0,
+    last_hit_at TEXT,
+    last_used_by TEXT,
+    origin TEXT NOT NULL DEFAULT 'qa_passed',
+    locked INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tm_lookup
-    ON translation_memory(source_lang, target_lang, source_hash);
+    ON translation_memory(scope, source_lang, target_lang, source_hash, segment_type, content_class);
 
 CREATE TABLE IF NOT EXISTS user_settings (
     user_id TEXT NOT NULL,
@@ -136,6 +149,84 @@ CREATE TABLE IF NOT EXISTS role_audit_log (
 );
 """
 
+APP_TABLES = {
+    "files",
+    "jobs",
+    "job_segments",
+    "templates",
+    "glossary_terms",
+    "glossary_audit_logs",
+    "translation_memory",
+    "user_settings",
+    "user_roles",
+    "role_audit_log",
+}
+
+
+@dataclass(frozen=True)
+class Migration:
+    name: str
+    sql: str = ""
+    apply: Callable[[sqlite3.Connection], None] | None = None
+
+
+def _ensure_translation_memory_columns(conn: sqlite3.Connection) -> None:
+    existing_columns = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(translation_memory)").fetchall()
+    }
+    desired_columns = {
+        "scope": "TEXT NOT NULL DEFAULT 'global'",
+        "segment_type": "TEXT NOT NULL DEFAULT 'paragraph'",
+        "content_class": "TEXT NOT NULL DEFAULT 'sentence'",
+        "source_text_normalized": "TEXT NOT NULL DEFAULT ''",
+        "quality_tier": "TEXT NOT NULL DEFAULT 'model_generated'",
+        "hit_count": "INTEGER NOT NULL DEFAULT 0",
+        "last_hit_at": "TEXT",
+        "last_used_by": "TEXT",
+        "origin": "TEXT NOT NULL DEFAULT 'qa_passed'",
+        "locked": "INTEGER NOT NULL DEFAULT 0",
+    }
+    for column_name, column_def in desired_columns.items():
+        if column_name in existing_columns:
+            continue
+        conn.execute(
+            f"ALTER TABLE translation_memory ADD COLUMN {column_name} {column_def}"
+        )
+    conn.execute("DROP INDEX IF EXISTS idx_tm_lookup")
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_tm_lookup
+        ON translation_memory(scope, source_lang, target_lang, source_hash, segment_type, content_class)
+        """
+    )
+
+
+def _ensure_job_segment_debug_columns(conn: sqlite3.Connection) -> None:
+    existing_columns = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(job_segments)").fetchall()
+    }
+    if "glossary_debug_json" not in existing_columns:
+        conn.execute(
+            "ALTER TABLE job_segments ADD COLUMN glossary_debug_json TEXT"
+        )
+    if "qa_debug_json" not in existing_columns:
+        conn.execute(
+            "ALTER TABLE job_segments ADD COLUMN qa_debug_json TEXT"
+        )
+
+
+MIGRATIONS = [
+    Migration("001_initial_schema", INITIAL_SCHEMA_SQL),
+    Migration("002_translation_memory_metadata", apply=_ensure_translation_memory_columns),
+    Migration("003_translation_memory_scope_index", apply=_ensure_translation_memory_columns),
+    Migration("004_job_segment_glossary_debug", apply=_ensure_job_segment_debug_columns),
+    Migration("005_job_segment_qa_debug", apply=_ensure_job_segment_debug_columns),
+    Migration("006_translation_memory_segment_keys", apply=_ensure_translation_memory_columns),
+    Migration("007_translation_memory_quality_tier", apply=_ensure_translation_memory_columns),
+]
+
 
 class Database:
     def __init__(self, db_path: Path) -> None:
@@ -148,8 +239,54 @@ class Database:
         except sqlite3.OperationalError:
             self._conn.execute("PRAGMA journal_mode = DELETE;")
         self._conn.execute("PRAGMA foreign_keys = ON;")
-        self._conn.executescript(SCHEMA_SQL)
+        self._run_migrations()
+
+    def _run_migrations(self) -> None:
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                name TEXT PRIMARY KEY,
+                applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+        applied = {
+            row["name"]
+            for row in self._conn.execute("SELECT name FROM schema_migrations").fetchall()
+        }
+        if not applied and self._has_full_legacy_schema():
+            self._stamp_existing_schema()
+            applied = {
+                row["name"]
+                for row in self._conn.execute("SELECT name FROM schema_migrations").fetchall()
+            }
+
+        for migration in MIGRATIONS:
+            if migration.name in applied:
+                continue
+            if migration.sql:
+                self._conn.executescript(migration.sql)
+            if migration.apply:
+                migration.apply(self._conn)
+            self._conn.execute(
+                "INSERT INTO schema_migrations (name) VALUES (?)",
+                (migration.name,),
+            )
         self._conn.commit()
+
+    def _has_full_legacy_schema(self) -> bool:
+        rows = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ).fetchall()
+        existing_tables = {row["name"] for row in rows}
+        return APP_TABLES.issubset(existing_tables)
+
+    def _stamp_existing_schema(self) -> None:
+        self._conn.execute(
+            "INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)",
+            (MIGRATIONS[0].name,),
+        )
 
     def execute(self, sql: str, params: tuple[Any, ...] = ()) -> sqlite3.Cursor:
         with self._lock:

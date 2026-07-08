@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,8 +13,10 @@ from auth.routes import router as auth_router
 from auth.session import SessionStore
 from config import load_config
 from database import Database
-from routes import convert, dashboard, files, glossary, health, settings, templates, translation, users
+from routes import convert, dashboard, files, glossary, health, quality, settings, templates, translation, users
 from services.storage import ensure_dirs
+
+logger = logging.getLogger(__name__)
 
 
 def utc_now() -> str:
@@ -33,7 +36,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="VoltDocs Python Backend")
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=cfg.cors_allowed_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -60,8 +63,9 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
 
     @app.exception_handler(Exception)
-    async def generic_exception_handler(_: Request, exc: Exception):
-        return JSONResponse(status_code=500, content={"error": str(exc)})
+    async def generic_exception_handler(request: Request, exc: Exception):
+        logger.exception("Unhandled application error on %s %s", request.method, request.url.path, exc_info=exc)
+        return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
     @app.on_event("startup")
     async def startup() -> None:
@@ -88,6 +92,7 @@ def create_app() -> FastAPI:
     app.include_router(files.router)
     app.include_router(settings.router)
     app.include_router(users.router)
+    app.include_router(quality.router)
     return app
 
 

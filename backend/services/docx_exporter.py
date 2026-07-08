@@ -254,7 +254,7 @@ def export_docx(
     request_segments: list[dict],
     target_lang: str = "",
 ) -> bytes:
-    replacements: dict[tuple[str, int], tuple[str, bool]] = {}
+    replacements: dict[tuple[str, int], list[tuple[int, str, bool]]] = {}
     for parsed, request in zip(parsed_segments, request_segments):
         source = (parsed.get("source_text") or parsed.get("plain_text") or "").strip()
         raw = (
@@ -271,7 +271,13 @@ def export_docx(
             continue
         location = parsed.get("_docx_location") or {}
         key = (location.get("part_name"), location.get("paragraph_index"))
-        replacements[key] = (translation, bool(location.get("field_display")))
+        replacements.setdefault(key, []).append(
+            (
+                int(location.get("line_index") or 0),
+                translation,
+                bool(location.get("field_display")),
+            )
+        )
 
     input_buffer = BytesIO(original_bytes)
     output_buffer = BytesIO()
@@ -302,10 +308,12 @@ def export_docx(
                         continue
                 paragraphs = root.xpath(".//w:p", namespaces=NSMAP)
                 for index, paragraph in enumerate(paragraphs):
-                    item = replacements.get((entry.filename, index))
-                    if not item:
+                    items = replacements.get((entry.filename, index))
+                    if not items:
                         continue
-                    translation, field_display = item
+                    items.sort(key=lambda item: item[0])
+                    translation = "\n".join(item[1] for item in items)
+                    field_display = bool(items[0][2])
                     if field_display:
                         _replace_field_display_text(paragraph, translation)
                     else:

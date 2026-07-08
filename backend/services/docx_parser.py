@@ -97,6 +97,22 @@ def _extract_paragraph_text(paragraph: etree._Element) -> tuple[str, str]:
     return plain, marked
 
 
+def _paragraph_is_in_table_cell(paragraph: etree._Element) -> bool:
+    return bool(paragraph.xpath("ancestor::w:tc", namespaces=NSMAP))
+
+
+def _split_multiline_cell_text(plain_text: str, source_text: str) -> list[tuple[str, str]]:
+    if "\n" not in plain_text and "\n" not in source_text:
+        return [(plain_text, source_text)]
+
+    plain_lines = [line.strip() for line in plain_text.splitlines() if line.strip()]
+    source_lines = [line.strip() for line in source_text.splitlines() if line.strip()]
+    if len(plain_lines) <= 1 or len(source_lines) <= 1 or len(plain_lines) != len(source_lines):
+        return [(plain_text, source_text)]
+
+    return list(zip(plain_lines, source_lines, strict=False))
+
+
 def _classify_segment_type(style_name: str | None, order: int, plain_text: str) -> str:
     if (style_name and ("heading" in style_name.lower() or "title" in style_name.lower())) or (order == 0 and len(plain_text) <= 30):
         return "title"
@@ -146,6 +162,8 @@ def _append_segment(
     *,
     part_name: str,
     paragraph_index: int,
+    line_index: int = 0,
+    line_count: int = 1,
     source_text: str,
     plain_text: str,
     style_name: str | None,
@@ -160,10 +178,14 @@ def _append_segment(
             "plain_text": plain_text,
             "style_name": style_name,
             "segment_type": _classify_segment_type(style_name, segment_order, plain_text),
+            "line_index": line_index,
+            "line_count": line_count,
             "_docx_location": {
                 "part_name": part_name,
                 "paragraph_index": paragraph_index,
                 "field_display": field_display,
+                "line_index": line_index,
+                "line_count": line_count,
             },
         }
     )
@@ -204,6 +226,22 @@ def extract_segments(content: bytes) -> list[dict]:
                 continue
             if NON_TRANSLATABLE_PATTERN.fullmatch(plain_text):
                 continue
+
+            if _paragraph_is_in_table_cell(paragraph):
+                line_pairs = _split_multiline_cell_text(plain_text, source_text)
+                if len(line_pairs) > 1:
+                    for line_index, (line_plain, line_source) in enumerate(line_pairs):
+                        _append_segment(
+                            segments,
+                            part_name=part_name,
+                            paragraph_index=paragraph_index,
+                            line_index=line_index,
+                            line_count=len(line_pairs),
+                            source_text=line_source,
+                            plain_text=line_plain,
+                            style_name=style_name,
+                        )
+                    continue
 
             _append_segment(
                 segments,
