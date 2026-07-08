@@ -91,9 +91,10 @@ backend/
 Uses `lxml` to directly manipulate internal XML:
 
 1. **Parsing**: Reads `word/document.xml`, headers (`header*.xml`), footers (`footer*.xml`)
-2. **Segment Types**: title, paragraph, structured
+2. **IR Build**: Converts document content into a document-oriented intermediate representation with stable segment ids and location metadata
 3. **Inline Formats**: `**bold**`, `*italic*`, `~~strikethrough~~`
-4. **Export**: Preserves runs, styles, images, tables
+4. **Translation Payload**: Sends only segment text plus per-segment glossary entries to the model
+5. **Export**: Preserves runs, styles, images, tables
 
 **Key Files:**
 - `services/docx_parser.py` - Extracts text with style info
@@ -106,7 +107,8 @@ Uses `openpyxl`:
 1. **Parsing**: Iterates worksheets → rows → cells
 2. **Segment Types**: `cell`, `sheet_title`
 3. **Context**: Sheet name, cell coordinate (e.g., A1)
-4. **Export**: Writes translations back to cells, renames sheets
+4. **Deduplication**: Collapses repeated source cells before translation, then fans translations back out
+5. **Export**: Writes translations back to cells, renames sheets
 
 **Key Files:**
 - `services/excel_parser.py` - Extracts cell content
@@ -114,11 +116,10 @@ Uses `openpyxl`:
 
 ### Batch Limits
 
-| File Type | Max Bytes | Max Segments |
-|-----------|-----------|--------------|
-| .xlsx     | 5000      | 40           |
-| .docx     | 2500      | 15           |
-| .md       | 5000      | 40           |
+| Scope | Max Bytes | Max Segments | Notes |
+|-------|-----------|--------------|-------|
+| Global config default | 5000 | 40 | Values exposed through `TRANSLATION_BATCH_MAX_BYTES` and `TRANSLATION_BATCH_MAX_SEGMENTS` |
+| Runtime path for `.docx` / `.xlsx` / `.md` | Caller-provided ceiling | Up to 50 | Current production path uses coarse simple batching to reduce request count and latency |
 
 ## Translation Flow
 
@@ -127,21 +128,24 @@ Uses `openpyxl`:
       ↓
 2. Parse (docx_parser / excel_parser / md_parser)
       ↓
-3. Extract segments with context (sheet, cell, style_name)
-      ↓
+3. Build file-specific IR and extract translatable segments with context (sheet, cell, style_name, document location)
+       ↓
 4. Load glossary terms for source/target language pair
-      ↓
-5. Split into batches (grouped by segment type)
-      ↓
-6. For each batch:
+       ↓
+5. Deduplicate repeated spreadsheet text when applicable
+       ↓
+6. Split into coarse byte-bounded batches
+       ↓
+7. For each batch:
    a. Check translation memory (TM)
    b. Call AWS Bedrock (Nova model)
-   c. QA check (7 rules + optional AI evaluation)
-   d. Store to TM if QA passed
-      ↓
-7. Export (docx_exporter / excel_exporter / md_exporter)
-      ↓
-8. Return translated file
+   c. Finalize text (marker cleanup, circled prefix preservation, heading punctuation normalization)
+   d. QA check (7 rules + optional AI evaluation)
+   e. Store to TM if QA passed
+       ↓
+8. Render/export (docx_exporter / excel_exporter / md_exporter)
+       ↓
+9. Return translated file
 ```
 
 ## QA Quality Checks
@@ -157,6 +161,13 @@ Automated checks on each segment:
 | Language correctness | Output is in target language |
 | Glossary compliance | Required terms used |
 | Punctuation | Correct punctuation for target language |
+
+## Prompt and Output Rules
+
+- The model receives only the segment text that actually needs translation, plus the glossary entries relevant to that segment.
+- The system prompt explicitly forbids metadata wrappers such as `translated text=` / `translation=` / labels / quotes around the answer.
+- The system prompt requires target-language punctuation, so English output should not keep Chinese sentence punctuation by default.
+- English heading output normalizes common Chinese heading punctuation such as `1、` to `1.` during finalization.
 
 ## Environment Variables
 

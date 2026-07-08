@@ -6,6 +6,7 @@ VoltDocs is an internal document processing platform for Voltage Energy. It supp
 
 - **Translate documents** - Support for `docx`, `xlsx`, and `md` files while preserving structure
 - **Quality Assurance** - Automated QA checks after translation with manual review workflow
+- **Quality Dashboard** - Chinese chart-first QA/TM overview with fixed filters and a scrollable metrics area
 - **Document Conversion** - Convert Markdown into Word documents with reusable templates
 - **Glossary Management** - Manage bilingual glossary terms and enforce them during translation
 - **Role-Based Access Control** - Three-level permission system (Super Admin / Manager / User)
@@ -59,17 +60,18 @@ VoltDocs/
 ### Document Processing Details
 
 **Word (.docx) Translation:**
-- Parses internal XML structure (document.xml, headers, footers)
+- Parses internal XML structure into a document-oriented intermediate representation before translation
 - Preserves: bold, italic, strikethrough, fonts, colors, images, tables
 - Handles: field codes, style inheritance, page layouts
+- Sends only translatable segment text plus per-segment terminology to the model, then renders back into DOCX
 
 **Excel (.xlsx) Translation:**
-- Parses worksheets and cell content
+- Parses worksheets into spreadsheet segments and deduplicates repeated cell content before translation
 - Preserves: formulas, merged cells, table styles, sheet names
 - Context: sheet name, cell coordinate (e.g., A1, B2)
 
 **Markdown Translation:**
-- Basic paragraph and heading translation
+- Basic paragraph and heading translation with the same coarse batching strategy as DOCX/XLSX
 - Supports inline formatting markers
 
 ## Local Development
@@ -139,13 +141,18 @@ Main backend settings in `backend/.env`:
 | `INITIAL_ADMIN_EMAIL` | First super admin email | - |
 | `BEDROCK_MODEL_ID` | Translation model | `us.amazon.nova-lite-v1:0` |
 | `BEDROCK_REGION` | AWS region | `us-east-1` |
-| `TRANSLATION_BATCH_MAX_BYTES` | Max bytes per batch | 5000 |
-| `TRANSLATION_BATCH_MAX_SEGMENTS` | Max segments per batch | 40 |
+| `TRANSLATION_BATCH_MAX_BYTES` | Global batch byte ceiling | 5000 |
+| `TRANSLATION_BATCH_MAX_SEGMENTS` | Global batch segment ceiling | 40 |
 | `QA_AI_ENABLED` | Enable AI QA | true |
 | `COGNITO_DOMAIN` | Cognito domain | - |
 | `COGNITO_CLIENT_ID` | Cognito app client ID | - |
 
 See `backend/config.py` for the full list.
+
+Runtime note:
+
+- `docx` / `xlsx` / `md` currently use coarse, byte-bounded batching in the translation path to reduce request count and latency.
+- The backend prompt requires the model to return only translated text, with no metadata prefixes such as `translated text=`, and to use target-language punctuation.
 
 ## Documentation
 

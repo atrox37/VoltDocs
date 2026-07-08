@@ -113,6 +113,11 @@ with zipfile.ZipFile(BytesIO(content)) as archive:
 }
 ```
 
+**当前 DOCX 处理形态**：
+- 解析阶段先抽取可翻译文本和定位信息，形成文档 IR
+- 调用模型时只发送需要翻译的 segment 文本，以及该 segment 命中的术语
+- 导出阶段再把译文回填到 IR 对应位置，恢复 DOCX 结构与样式
+
 **格式标记规则**：
 - `**text**` → 加粗
 - `*text*` → 斜体
@@ -163,11 +168,14 @@ parser(content) → 提取片段列表
     ↓
 load_glossary_terms() → 加载术语表
     ↓
-_split_into_batches() → 按类型分批
+如为 xlsx：先按文本去重，减少重复调用
+    ↓
+_split_into_batches() → 按字节/条数上限进行粗粒度分批
     ↓
 translate_segments() → 并行翻译
     ├─ 检查翻译记忆 (TM)
     ├─ 调用 Bedrock API
+    ├─ 译后收尾（格式标记清洗、带圈编号补回、标题编号标点规范化）
     ├─ QA 检查
     └─ 存储到 TM
     ↓
@@ -178,28 +186,21 @@ export_*(原始文件, 片段, 翻译结果) → 生成输出
 
 ### 分批策略
 
-**Excel 分批** (`_split_xlsx_batches`)：
-- `passthrough`: 不需要翻译的内容
-- `label`: 短标签（≤4词）
-- `short_text`: 短文本（≤24字符）
-- `long_text`: 长文本（≥40字符或≥8词）
-- `content`: 普通内容
+**当前生产路径**：
+- `docx` / `xlsx` / `md` 统一走 `_split_into_simple_batches()`
+- 约束维度是批次总字节数和 segment 条数，不再按 `label / short_text / long_text` 做主路径拆分
+- 目的：减少请求数量、降低总延迟、避免同一文档被切成过多小批次
 
-**Word 分批** (`_split_into_batches`)：
-按片段类型和样式分组：
-- `title`: 标题
-- `table`: 表格内容
-- `structured`: 列表/引用
-- `label`: 短标签
-- `paragraph`: 普通段落
+**保留的辅助分类逻辑**：
+- `_segment_kind()` 仍用于识别标题、表格、结构化内容、短标签等类型
+- `_split_xlsx_batches()` 仍保留在代码中，但当前主翻译路径不使用它作为 Excel 的默认切分器
 
 ### 批量限制
 
 | 文件类型 | 最大字节 | 最大片段数 |
 |---------|---------|-----------|
-| .xlsx   | 5000    | 40        |
-| .docx   | 2500    | 15        |
-| .md     | 5000    | 40        |
+| 全局默认配置 | 5000 | 40 |
+| 当前 `docx/xlsx/md` 运行上限 | 调用方传入 | 最多 50 |
 
 ## 2.3 术语表匹配 (glossary_matcher.py)
 
@@ -243,6 +244,12 @@ CREATE TABLE glossary_terms (
 ### 用途
 
 缓存历史翻译结果，加速重复内容翻译
+
+### 与当前翻译链路的关系
+
+- TM 检索发生在送模型之前
+- Excel 在送模型前还会先做一次文本去重，因此“去重命中”和“TM 命中”是两层独立优化
+- 只有通过 QA 的结果才会写回 TM，避免坏译文污染缓存
 
 ### 数据结构
 
@@ -301,6 +308,12 @@ ORDER BY scope, hit_count DESC
 ### AI QA (可选)
 
 当 `QA_AI_ENABLED=true` 时，会调用 Nova 模型对译文进行进一步评估
+
+### 当前提示词约束
+
+- 只允许模型返回译文本体，禁止返回 `translated text=`、`translation=`、引号、标签、解释性前后缀
+- 要求使用目标语言标点，避免英文句子保留中文句号/顿号等源语言标点
+- 标题与编号在英译场景下会进一步规范为英文标题风格，如 `1、` → `1.`
 
 ## 2.6 文档导出 (Exporter)
 
