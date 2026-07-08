@@ -3,7 +3,10 @@ WORKDIR /app
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml frontend/tsconfig.json frontend/vite.config.ts frontend/index.html ./
 COPY frontend/public ./public
 COPY frontend/src ./src
-RUN corepack enable && pnpm install --frozen-lockfile && pnpm run build
+RUN corepack enable \
+ && corepack prepare pnpm@10.15.1 --activate \
+ && pnpm install --frozen-lockfile \
+ && pnpm run build
 
 FROM nginx:1.18.0
 COPY --from=build /app/dist /usr/share/nginx/html
